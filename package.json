@@ -1,0 +1,68 @@
+{
+  "name": "openclaw-dashboard",
+  "version": "1.0.0",
+  "description": "OpenClaw控制面板 - 完全绕过Gateway认证，提供稳定可靠的会话管理和消息发送功能",
+  "main": "backend/cli-proxy.js",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "cli": "node backend/cli-proxy.js",
+    "frontend": "node backend/frontend-server.js",
+    "start:all": "concurrently \"npm run cli\" \"npm run frontend\"",
+    "start:windows": "powershell -ExecutionPolicy Bypass -File scripts/start-dashboard.ps1",
+    "start:linux": "bash scripts/start-dashboard.sh",
+    "start:simple": "node backend/cli-proxy.js & node backend/frontend-server.js",
+    "test": "node backend/test-connection.js",
+    "test:api": "curl http://localhost:3002/health",
+    "test:frontend": "curl http://localhost:3003/fixed-dashboard.html",
+    "clean": "rm -rf node_modules package-lock.json",
+    "lint": "eslint backend/*.js"
+  },
+  "keywords": [
+    "openclaw",
+    "dashboard",
+    "control-panel",
+    "ai",
+    "agent",
+    "cli",
+    "gateway",
+    "authentication-bypass"
+  ],
+  "author": "逍遥 & 贾维斯",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/openclaw-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/openclaw-dashboard/issues"
+  },
+  "homepage": "https://github.com/yourusername/openclaw-dashboard#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "winston": "^3.11.0",
+    "dotenv": "^16.3.1",
+    "node-cache": "^5.1.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1",
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "files": [
+    "backend/",
+    "frontend/",
+    "scripts/",
+    "config/",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "openclaw-dashboard": "./scripts/start-dashboard.ps1"
+  }
+}

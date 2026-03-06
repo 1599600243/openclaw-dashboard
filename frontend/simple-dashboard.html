@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw会话管理 - CLI代理版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.8rem;
+            background: linear-gradient(45deg, #00dbde, #fc00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            margin-bottom: 15px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .sessions-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .panel-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-title button {
+            padding: 8px 16px;
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .panel-title button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 219, 222, 0.4);
+        }
+        
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .session-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .session-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+            border-color: rgba(0, 219, 222, 0.3);
+        }
+        
+        .session-item.active {
+            background: rgba(0, 219, 222, 0.1);
+            border-color: rgba(0, 219, 222, 0.5);
+        }
+        
+        .session-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .session-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #00dbde;
+        }
+        
+        .session-meta {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-bottom: 5px;
+        }
+        
+        .session-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(45deg, #0093e9, #00dbde);
+            box-shadow: 0 5px 15px rgba(0, 219, 222, 0.4);
+        }
+        
+        .chat-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-header {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 10px;
+            max-width: 80%;
+        }
+        
+        .message.user {
+            background: rgba(0, 219, 222, 0.2);
+            margin-left: auto;
+            border: 1px solid rgba(0, 219, 222, 0.3);
+        }
+        
+        .message.assistant {
+            background: rgba(255, 255, 255, 0.1);
+            margin-right: auto;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .message-content {
+            line-height: 1.5;
+        }
+        
+        .message-time {
+            font-size: 0.8rem;
+            opacity: 0.6;
+            margin-top: 5px;
+            text-align: right;
+        }
+        
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .chat-input textarea {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            resize: none;
+            min-height: 60px;
+        }
+        
+        .chat-input textarea:focus {
+            outline: none;
+            border-color: rgba(0, 219, 222, 0.5);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .chat-input button {
+            padding: 12px 24px;
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .chat-input button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 219, 222, 0.4);
+        }
+        
+        .chat-input button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+        
+        .error {
+            background: rgba(255, 65, 108, 0.2);
+            border: 1px solid rgba(255, 65, 108, 0.3);
+            color: #ff416c;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+        
+        .success {
+            background: rgba(17, 153, 142, 0.2);
+            border: 1px solid rgba(17, 153, 142, 0.3);
+            color: #11998e;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 OpenClaw会话管理</h1>
+            <div class="subtitle">CLI代理版 - 完全绕过Gateway认证问题</div>
+            <div class="status-badge" id="connectionStatus">✅ 正在连接...</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="sessions-panel">
+                <div class="panel-title">
+                    <span>💬 当前会话</span>
+                    <button onclick="loadSessions()">🔄 刷新</button>
+                </div>
+                <div class="session-list" id="sessionList">
+                    <div class="loading">正在加载会话...</div>
+                </div>
+            </div>
+            
+            <div class="chat-panel">
+                <div class="chat-header" id="chatHeader">选择会话开始聊天</div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="loading" id="chatLoading">
+                        请从左侧选择一个会话
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <textarea id="messageInput" placeholder="输入消息..." disabled></textarea>
+                    <button id="sendButton" disabled onclick="sendMessage()">发送</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>CLI代理地址: http://localhost:3002 | 版本: 1.0.0 | 绕过Gateway WebSocket认证</p>
+            <p>💡 提示: 此版本完全使用OpenClaw CLI命令，无需Gateway设备配对</p>
+        </div>
+    </div>
+
+    <script>
+        // 配置
+        const API_BASE = 'http://localhost:3002/api';
+        let currentSession = null;
+        let messageHistory = {};
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            testConnection();
+            loadSessions();
+            
+            // 绑定发送快捷键
+            document.getElementById('messageInput').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!document.getElementById('sendButton').disabled) {
+                        sendMessage();
+                    }
+                }
+            });
+        });
+        
+        // 测试连接
+        async function testConnection() {
+            try {
+                // 健康检查端点是 /health，不是 /api/health
+                const response = await fetch('http://localhost:3002/health');
+                const data = await response.json();
+                
+                if (data.status === 'healthy') {
+                    document.getElementById('connectionStatus').textContent = '✅ CLI代理连接正常';
+                    document.getElementById('connectionStatus').style.background = 'rgba(0, 255, 136, 0.2)';
+                    document.getElementById('connectionStatus').style.color = '#00ff88';
+                    return true;
+                }
+            } catch (error) {
+                console.error('连接测试失败:', error);
+                document.getElementById('connectionStatus').textContent = '❌ CLI代理连接失败: ' + error.message;
+                document.getElementById('connectionStatus').style.background = 'rgba(255, 65, 108, 0.2)';
+                document.getElementById('connectionStatus').style.color = '#ff416c';
+                return false;
+            }
+        }
+        
+        // 加载会话列表
+        async function loadSessions() {
+            const sessionList = document.getElementById('sessionList');
+            
+            try {
+                sessionList.innerHTML = '<div class="loading">正在加载会话...</div>';
+                
+                const response = await fetch(`${API_BASE}/sessions`);
+                const data = await response.json();
+                
+                if (data.success && data.data && data.data.sessions) {
+                    const sessions = data.data.sessions;
+                    
+                    if (sessions.length === 0) {
+                        sessionList.innerHTML = '<div class="loading">暂无会话</div>';
+                        return;
+                    }
+                    
+                    sessionList.innerHTML = sessions.map(session => `
+                        <div class="session-item ${currentSession === session.sessionKey ? 'active' : ''}" 
+                             onclick="selectSession('${session.sessionKey}', '${session.label || session.sessionKey}')">
+                            <div class="session-header">
+                                <div class="session-name">${session.label || session.sessionKey}</div>
+                                <div class="session-meta">${new Date(session.lastMessageAt).toLocaleString()}</div>
+                            </div>
+                            <div class="session-meta">
+                                Agent: ${session.agentId || 'main'} | 
+                                消息数: ${session.messageCount || 0}
+                            </div>
+                            <div class="session-actions">
+                                <button class="btn btn-primary" onclick="event.stopPropagation(); loadHistory('${session.sessionKey}')">
+                                    查看历史
+                                </button>
+                                <button class="btn" onclick="event.stopPropagation(); refreshSession('${session.sessionKey}')">
+                                    刷新
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    sessionList.innerHTML = '<div class="error">无法加载会话数据</div>';
+                }
+            } catch (error) {
+                console.error('加载会话失败:', error);
+                sessionList.innerHTML = '<div class="error">连接失败: ' + error.message + '</div>';
+            }
+        }
+        
+        // 选择会话
+        function selectSession(sessionKey, sessionName) {
+            currentSession = sessionKey;
+            
+            // 更新UI
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            document.querySelector(`.session-item[onclick*="${sessionKey}"]`).classList.add('active');
+            
+            // 更新聊天头
+            document.getElementById('chatHeader').textContent = `💬 ${sessionName}`;
+            
+            // 启用输入框
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('messageInput').placeholder = `发送消息到 ${sessionName}...`;
+            document.getElementById('messageInput').focus();
+            
+            // 加载历史消息
+            loadHistory(sessionKey);
+            
+            // 更新聊天加载状态
+            document.getElementById('chatLoading').style.display = 'none';
+        }
+        
+        // 加载历史消息
+        async function loadHistory(sessionKey) {
+            const chatMessages = document.getElementById('chatMessages');
+            
+            try {
+                const response = await fetch(`${API_BASE}/sessions/${sessionKey}/history`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    // 保存到历史记录
+                    messageHistory[sessionKey] = data.messages || [];
+                    
+                    // 显示消息
+                    renderMessages(data.messages);
+                } else {
+                    chatMessages.innerHTML = '<div class="error">无法加载历史消息</div>';
+                }
+            } catch (error) {
+                console.error('加载历史失败:', error);
+                chatMessages.innerHTML = '<div class="error">加载失败: ' + error.message + '</div>';
+            }
+        }
+        
+        // 渲染消息
+        function renderMessages(messages) {
+            const chatMessages = document.getElementById('chatMessages');
+            
+            if (!messages || messages.length === 0) {
+                chatMessages.innerHTML = '<div class="loading">暂无历史消息</div>';
+                return;
+            }
+            
+            chatMessages.innerHTML = messages.map(msg => {
+                const isUser = msg.role === 'user' || msg.role === 'human';
+                const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '未知时间';
+                const content = msg.content || msg.text || JSON.stringify(msg);
+                
+                return `
+                    <div class="message ${isUser ? 'user' : 'assistant'}">
+                        <div class="message-content">${escapeHtml(content)}</div>
+                        <div class="message-time">${time}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || !currentSession) {
+                return;
+            }
+            
+            const sendButton = document.getElementById('sendButton');
+            const originalText = sendButton.textContent;
+            
+            try {
+                // 禁用发送按钮
+                sendButton.disabled = true;
+                sendButton.textContent = '发送中...';
+                
+                // 显示用户消息
+                const chatMessages = document.getElementById('chatMessages');
+                const userMessage = {
+                    role: 'user',
+                    content: message,
+                    timestamp: new Date().toISOString()
+                };
+                
+                // 添加到历史
+                if (!messageHistory[currentSession]) {
+                    messageHistory[currentSession] = [];
+                }
+                messageHistory[currentSession].unshift(userMessage);
+                
+                // 渲染消息
+                renderMessages(messageHistory[currentSession]);
+                
+                // 发送到API
+                const response = await fetch(`${API_BASE}/sessions/${currentSession}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // 清空输入框
+                    input.value = '';
+                    
+                    // 显示成功消息
+                    const successDiv = document.createElement('div');
+                    successDiv.className = 'success';
+                    successDiv.textContent = '✅ 消息发送成功，等待AI回复...';
+                    chatMessages.appendChild(successDiv);
+                    
+                    // 滚动到底部
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    
+                    // 刷新会话列表
+                    setTimeout(loadSessions, 1000);
+                } else {
+                    throw new Error(data.error || '发送失败');
+                }
+            } catch (error) {
+                console.error('发送消息失败:', error);
+                
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = '❌ 发送失败: ' + error.message;
+                document.getElementById('chatMessages').appendChild(errorDiv);
+            } finally {
+                // 恢复发送按钮
+                sendButton.disabled = false;
+                sendButton.textContent = originalText;
+            }
+        }
+        
+        // 刷新会话
+        function refreshSession(sessionKey) {
+            if (sessionKey === currentSession) {
+                loadHistory(sessionKey);
+            }
+            loadSessions();
+        }
+        
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 自动刷新
+        setInterval(() => {
+            if (currentSession) {
+                loadHistory(currentSession);
+            }
+            loadSessions();
+        }, 30000); // 每30秒刷新一次
+    </script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直接测试 - OpenClaw Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2196f3;
+            border-bottom: 2px solid #2196f3;
+            padding-bottom: 10px;
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        
+        button:hover {
+            background: #0d8bf2;
+        }
+        
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            min-height: 50px;
+            font-family: monospace;
+        }
+        
+        .success {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        .loading {
+            color: #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 OpenClaw Dashboard 连接测试</h1>
+        
+        <div class="test-section">
+            <h2>1. 测试CLI代理服务 (端口3002)</h2>
+            <button onclick="testCLIProxy()">测试连接</button>
+            <div class="result" id="cliTestResult">等待测试...</div>
+        </div>
+        
+        <div class="test-section">
+            <h2>2. 测试OpenClaw CLI命令</h2>
+            <button onclick="testOpenClawVersion()">测试版本</button>
+            <button onclick="testSessions()">测试会话列表</button>
+            <div class="result" id="cliCommandResult">等待测试...</div>
+        </div>
+        
+        <div class="test-section">
+            <h2>3. 访问完整Dashboard</h2>
+            <p>如果上述测试都通过，可以访问完整界面：</p>
+            <button onclick="openDashboard()">打开Dashboard</button>
+            <button onclick="openSimpleDashboard()">打开简单版</button>
+            <button onclick="openStarOffice()">打开Star Office UI</button>
+        </div>
+        
+        <div class="test-section">
+            <h2>4. 网络诊断</h2>
+            <button onclick="diagnoseNetwork()">运行诊断</button>
+            <div class="result" id="networkResult">等待诊断...</div>
+        </div>
+    </div>
+
+    <script>
+        async function testCLIProxy() {
+            const result = document.getElementById('cliTestResult');
+            result.innerHTML = '<span class="loading">测试中...</span>';
+            
+            try {
+                const response = await fetch('http://localhost:3002/health');
+                const data = await response.json();
+                
+                result.innerHTML = `
+                    <span class="success">✅ 连接成功！</span>
+                    <div>状态: ${data.status}</div>
+                    <div>时间: ${data.timestamp}</div>
+                    <div>版本: ${data.version}</div>
+                `;
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ 连接失败: ${error.message}</span>`;
+            }
+        }
+        
+        async function testOpenClawVersion() {
+            const result = document.getElementById('cliCommandResult');
+            result.innerHTML = '<span class="loading">执行中...</span>';
+            
+            try {
+                const response = await fetch('http://localhost:3002/api/test');
+                const data = await response.json();
+                
+                if (data.success) {
+                    result.innerHTML = `
+                        <span class="success">✅ OpenClaw CLI工作正常！</span>
+                        <div>版本: ${data.version}</div>
+                        <div>状态: ${data.status}</div>
+                        <div>会话数: ${data.sessionsCount}</div>
+                    `;
+                } else {
+                    result.innerHTML = `<span class="error">❌ 测试失败: ${data.error}</span>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ 请求失败: ${error.message}</span>`;
+            }
+        }
+        
+        async function testSessions() {
+            const result = document.getElementById('cliCommandResult');
+            result.innerHTML = '<span class="loading">获取会话列表...</span>';
+            
+            try {
+                const response = await fetch('http://localhost:3002/api/sessions');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const count = data.count || (data.data?.sessions?.length || 0);
+                    result.innerHTML = `
+                        <span class="success">✅ 获取成功！</span>
+                        <div>会话数量: ${count}</div>
+                        ${data.data?.sessions ? `
+                            <div>会话列表:</div>
+                            <ul style="font-size: 12px; max-height: 200px; overflow-y: auto;">
+                                ${data.data.sessions.map(s => `<li>${s.label || s.sessionKey} (${s.agentId || 'main'})</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                    `;
+                } else {
+                    result.innerHTML = `<span class="error">❌ 获取失败: ${data.error}</span>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ 请求失败: ${error.message}</span>`;
+            }
+        }
+        
+        function openDashboard() {
+            window.open('http://localhost:3003/simple-dashboard.html', '_blank');
+        }
+        
+        function openSimpleDashboard() {
+            // 直接在当前窗口打开
+            window.location.href = 'http://localhost:3003/simple-dashboard.html';
+        }
+        
+        function openStarOffice() {
+            window.open('http://127.0.0.1:19000', '_blank');
+        }
+        
+        async function diagnoseNetwork() {
+            const result = document.getElementById('networkResult');
+            result.innerHTML = '<span class="loading">诊断中...</span>';
+            
+            let diagnosis = '<h3>网络诊断结果：</h3><ul>';
+            
+            try {
+                // 测试CLI代理
+                const cliResponse = await fetch('http://localhost:3002/health');
+                diagnosis += `<li class="success">✅ CLI代理 (3002): 正常</li>`;
+            } catch (error) {
+                diagnosis += `<li class="error">❌ CLI代理 (3002): 失败 - ${error.message}</li>`;
+            }
+            
+            try {
+                // 测试前端服务器
+                const frontendResponse = await fetch('http://localhost:3003/simple-dashboard.html');
+                diagnosis += `<li class="success">✅ 前端服务器 (3003): 正常</li>`;
+            } catch (error) {
+                diagnosis += `<li class="error">❌ 前端服务器 (3003): 失败 - ${error.message}</li>`;
+            }
+            
+            try {
+                // 测试Star Office UI
+                const starResponse = await fetch('http://127.0.0.1:19000');
+                diagnosis += `<li class="success">✅ Star Office UI (19000): 正常</li>`;
+            } catch (error) {
+                diagnosis += `<li class="error">❌ Star Office UI (19000): 失败 - ${error.message}</li>`;
+            }
+            
+            // 测试Gateway
+            try {
+                const gatewayResponse = await fetch('http://127.0.0.1:18789');
+                diagnosis += `<li class="success">✅ Gateway (18789): 正常</li>`;
+            } catch (error) {
+                diagnosis += `<li class="error">❌ Gateway (18789): 失败 - ${error.message}</li>`;
+            }
+            
+            diagnosis += '</ul>';
+            
+            // 添加建议
+            diagnosis += '<h3>建议：</h3>';
+            if (diagnosis.includes('❌')) {
+                diagnosis += '<p>❌ 部分服务连接失败，请尝试：</p>';
+                diagnosis += '<ul>';
+                diagnosis += '<li>检查防火墙设置</li>';
+                diagnosis += '<li>确保服务正在运行</li>';
+                diagnosis += '<li>尝试刷新页面</li>';
+                diagnosis += '</ul>';
+            } else {
+                diagnosis += '<p class="success">✅ 所有服务连接正常！</p>';
+                diagnosis += '<p>可以正常使用Dashboard。</p>';
+            }
+            
+            result.innerHTML = diagnosis;
+        }
+        
+        // 页面加载时自动测试
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(testCLIProxy, 500);
+        });
+    </script>
+</body>
+</html>
