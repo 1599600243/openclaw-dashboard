@@ -232,47 +232,15 @@ app.post('/api/sessions/:sessionKey/messages', async (req, res) => {
 });
 
 /**
- * 获取会话历史
+ * 获取会话历史（兼容旧版路径）
  */
 app.get('/api/sessions/:sessionKey/history', async (req, res) => {
   try {
     const { sessionKey } = req.params;
     const limit = req.query.limit || 50;
     
-    // 读取会话的历史文件
-    const historyPath = path.join(
-      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
-      'sessions',
-      sessionKey,
-      'messages.jsonl'
-    );
-    
-    if (fs.existsSync(historyPath)) {
-      const content = fs.readFileSync(historyPath, 'utf8');
-      const lines = content.trim().split('\n').filter(line => line.trim());
-      const messages = lines.slice(-limit).map(line => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return { raw: line };
-        }
-      });
-      
-      res.json({
-        success: true,
-        sessionKey: sessionKey,
-        messages: messages.reverse(), // 最新消息在前
-        count: messages.length
-      });
-    } else {
-      res.json({
-        success: true,
-        sessionKey: sessionKey,
-        messages: [],
-        count: 0,
-        note: '暂无历史消息'
-      });
-    }
+    const result = await getSessionMessages(sessionKey, limit);
+    res.json(result);
   } catch (error) {
     console.error('获取历史失败:', error);
     res.status(500).json({
@@ -281,6 +249,149 @@ app.get('/api/sessions/:sessionKey/history', async (req, res) => {
     });
   }
 });
+
+/**
+ * 获取会话消息（新版路径，符合用户要求）
+ */
+app.get('/api/session/:sessionId/messages', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const limit = req.query.limit || 200; // 默认更多消息
+    
+    const result = await getSessionMessages(sessionId, limit);
+    res.json(result);
+  } catch (error) {
+    console.error('获取消息失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取会话消息的通用函数
+ */
+async function getSessionMessages(sessionId, limit = 50) {
+  // 尝试多种可能的文件路径
+  const possiblePaths = [
+    // 路径1: ~/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl
+    path.join(
+      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
+      'agents',
+      'main', // 默认agentId为main，可以从sessionId解析agent信息
+      'sessions',
+      `${sessionId}.jsonl`
+    ),
+    // 路径2: ~/.openclaw/sessions/<sessionId>/messages.jsonl
+    path.join(
+      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
+      'sessions',
+      sessionId,
+      'messages.jsonl'
+    ),
+    // 路径3: ~/.openclaw/agents/main/sessions/<sessionId>/messages.jsonl
+    path.join(
+      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
+      'agents',
+      'main',
+      'sessions',
+      sessionId,
+      'messages.jsonl'
+    )
+  ];
+  
+  let fileContent = '';
+  let foundPath = '';
+  
+  for (const filePath of possiblePaths) {
+    if (fs.existsSync(filePath)) {
+      foundPath = filePath;
+      fileContent = fs.readFileSync(filePath, 'utf8');
+      break;
+    }
+  }
+  
+  if (!fileContent) {
+    return {
+      success: true,
+      sessionId: sessionId,
+      messages: [],
+      count: 0,
+      note: '暂无历史消息',
+      warning: `未找到会话文件，尝试了以下路径: ${possiblePaths.map(p => path.basename(p)).join(', ')}`
+    };
+  }
+  
+  const lines = fileContent.trim().split('\n').filter(line => line.trim());
+  const rawMessages = lines.slice(-limit).map(line => {
+    try {
+      return JSON.parse(line);
+    } catch (error) {
+      console.warn(`解析JSONL行失败: ${line.substring(0, 100)}`);
+      return { raw: line, error: '解析失败' };
+    }
+  });
+  
+  // 转换消息格式为统一的前端格式
+  const messages = rawMessages.map(msg => {
+    // OpenClaw JSONL格式可能是多种类型
+    // 类型1: {"type":"user","content":"hello"}
+    // 类型2: {"role":"user","content":"hello"}
+    // 类型3: {"role":"human","content":"hello"}
+    // 类型4: {"role":"assistant","content":"hi"}
+    // 类型5: {"type":"tool","name":"search","result":"..."}
+    
+    const result = { ...msg };
+    
+    // 标准化role字段
+    if (msg.type === 'user' || msg.role === 'human' || msg.role === 'user') {
+      result.role = 'user';
+    } else if (msg.type === 'assistant' || msg.role === 'assistant') {
+      result.role = 'assistant';
+    } else if (msg.type === 'tool' || msg.name) {
+      result.role = 'tool';
+      result.toolName = msg.name || 'unknown';
+      result.content = msg.result || msg.content || JSON.stringify(msg);
+    } else if (msg.role) {
+      result.role = msg.role;
+    } else {
+      result.role = 'unknown';
+    }
+    
+    // 标准化content字段
+    if (!result.content && msg.text) {
+      result.content = msg.text;
+    } else if (!result.content && msg.message) {
+      result.content = msg.message;
+    } else if (!result.content) {
+      result.content = JSON.stringify(msg);
+    }
+    
+    // 添加时间戳
+    if (!result.timestamp && msg.timestamp) {
+      result.timestamp = msg.timestamp;
+    } else if (!result.timestamp && msg.time) {
+      result.timestamp = msg.time;
+    } else if (!result.timestamp) {
+      result.timestamp = new Date().toISOString();
+    }
+    
+    return result;
+  });
+  
+  // 最新消息在前
+  const sortedMessages = messages.reverse();
+  
+  return {
+    success: true,
+    sessionId: sessionId,
+    messages: sortedMessages,
+    count: sortedMessages.length,
+    total: lines.length,
+    filePath: foundPath ? path.basename(foundPath) : 'not found'
+  };
+}
 
 /**
  * 运行自定义命令（调试用）
@@ -364,6 +475,54 @@ app.get('/api/status', async (req, res) => {
       }
     });
   }
+});
+
+/**
+ * 调试：检查会话文件路径
+ */
+app.get('/api/debug/session/:sessionId/paths', (req, res) => {
+  const { sessionId } = req.params;
+  const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+  
+  const possiblePaths = [
+    // 路径1: ~/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl
+    path.join(stateDir, 'agents', 'main', 'sessions', `${sessionId}.jsonl`),
+    // 路径2: ~/.openclaw/sessions/<sessionId>/messages.jsonl
+    path.join(stateDir, 'sessions', sessionId, 'messages.jsonl'),
+    // 路径3: ~/.openclaw/agents/main/sessions/<sessionId>/messages.jsonl
+    path.join(stateDir, 'agents', 'main', 'sessions', sessionId, 'messages.jsonl'),
+    // 路径4: 检查state目录结构
+    path.join(stateDir, 'state', 'agents', 'main', 'sessions', `${sessionId}.jsonl`)
+  ];
+  
+  const results = possiblePaths.map(filePath => ({
+    path: filePath,
+    exists: fs.existsSync(filePath),
+    readable: fs.existsSync(filePath) ? true : false,
+    size: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+  }));
+  
+  // 检查目录结构
+  const dirsToCheck = [
+    path.join(stateDir, 'agents'),
+    path.join(stateDir, 'sessions'),
+    path.join(stateDir, 'state')
+  ];
+  
+  const dirResults = dirsToCheck.map(dirPath => ({
+    path: dirPath,
+    exists: fs.existsSync(dirPath),
+    isDirectory: fs.existsSync(dirPath) ? fs.statSync(dirPath).isDirectory() : false
+  }));
+  
+  res.json({
+    success: true,
+    sessionId: sessionId,
+    stateDir: stateDir,
+    possiblePaths: results,
+    directoryStructure: dirResults,
+    note: '用于调试会话文件位置'
+  });
 });
 
 // 错误处理
