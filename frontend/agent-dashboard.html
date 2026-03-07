@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw - 代理管理中心</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 30px 20px;
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .header h1 {
+            font-size: 2.8rem;
+            background: linear-gradient(45deg, #00dbde, #fc00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            font-weight: 800;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        .status-healthy {
+            background: linear-gradient(45deg, #11998e, #38ef7d);
+            color: white;
+        }
+        
+        .status-error {
+            background: linear-gradient(45deg, #ff416c, #ff4b2b);
+            color: white;
+        }
+        
+        .main-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 0 10px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 219, 222, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(45deg, #11998e, #38ef7d);
+        }
+        
+        .btn-success:hover {
+            box-shadow: 0 8px 20px rgba(17, 153, 142, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* 代理卡片网格 */
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .agent-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .agent-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(0, 219, 222, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+        
+        .agent-card.main-agent {
+            border-left: 6px solid #00dbde;
+        }
+        
+        .agent-card.default-agent {
+            border-left: 6px solid #11998e;
+        }
+        
+        .agent-card.custom-agent {
+            border-left: 6px solid #f7971e;
+        }
+        
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+        
+        .agent-title {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #00dbde;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .agent-badge {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .badge-main {
+            background: rgba(0, 219, 222, 0.2);
+            color: #00dbde;
+        }
+        
+        .badge-default {
+            background: rgba(17, 153, 142, 0.2);
+            color: #11998e;
+        }
+        
+        .badge-custom {
+            background: rgba(247, 151, 30, 0.2);
+            color: #f7971e;
+        }
+        
+        .agent-description {
+            color: #b0b0b0;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        
+        .agent-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.7;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .agent-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+        
+        .action-btn-primary {
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+        }
+        
+        .action-btn-warning {
+            background: linear-gradient(45deg, #f7971e, #ffd200);
+        }
+        
+        .action-btn-danger {
+            background: linear-gradient(45deg, #ff416c, #ff4b2b);
+        }
+        
+        /* 向导模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        
+        .modal {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            padding: 30px;
+            width: 100%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-header {
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        
+        .modal-title {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #00dbde;
+            margin-bottom: 10px;
+        }
+        
+        .modal-subtitle {
+            color: #b0b0b0;
+            font-size: 1rem;
+        }
+        
+        .wizard-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        .wizard-steps::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-50%);
+            z-index: 1;
+        }
+        
+        .wizard-step {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #b0b0b0;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .step-circle.active {
+            background: linear-gradient(45deg, #00dbde, #0093e9);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .step-circle.completed {
+            background: linear-gradient(45deg, #11998e, #38ef7d);
+            color: white;
+        }
+        
+        .step-label {
+            font-size: 0.85rem;
+            color: #b0b0b0;
+        }
+        
+        .step-label.active {
+            color: #00dbde;
+            font-weight: bold;
+        }
+        
+        .wizard-content {
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            outline: none;
+            border-color: rgba(0, 219, 222, 0.5);
+            box-shadow: 0 0 0 3px rgba(0, 219, 222, 0.1);
+        }
+        
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .form-hint {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .skill-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .skill-checkbox:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .skill-checkbox.selected {
+            background: rgba(0, 219, 222, 0.1);
+            border-color: rgba(0, 219, 222, 0.3);
+        }
+        
+        .skill-checkbox input {
+            display: none;
+        }
+        
+        .skill-name {
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        
+        .skill-description {
+            font-size: 0.85rem;
+            color: #b0b0b0;
+            margin-top: 3px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .modal-actions .btn {
+            flex: 1;
+        }
+        
+        /* 加载和错误状态 */
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 1.1rem;
+            color: #b0b0b0;
+        }
+        
+        .error {
+            background: rgba(255, 65, 108, 0.2);
+            border: 1px solid rgba(255, 65, 108, 0.3);
+            color: #ff416c;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        
+        .success {
+            background: rgba(17, 153, 142, 0.2);
+            border: 1px solid rgba(17, 153, 142, 0.3);
+            color: #11998e;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #888;
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .empty-state-title {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #b0b0b0;
+        }
+        
+        .empty-state-description {
+            font-size: 1rem;
+            margin-bottom: 30px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.6;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .agents-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-bar {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+            
+            .main-controls {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+            
+            .modal {
+                padding: 20px;
+            }
+            
+            .wizard-steps {
+                flex-wrap: wrap;
+                gap: 15px;
+            }
+            
+            .wizard-steps::before {
+                display: none;
+            }
+            
+            .wizard-step {
+                flex: 1;
+                min-width: 100px;
+            }
+        }
+        
+        /* 模板选择 */
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .template-card {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .template-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-5px);
+        }
+        
+        .template-card.selected {
+            border-color: #00dbde;
+            background: rgba(0, 219, 222, 0.1);
+        }
+        
+        .template-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .template-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: white;
+        }
+        
+        .template-description {
+            font-size: 0.9rem;
+            color: #b0b0b0;
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+        
+        .template-features {
+            font-size: 0.85rem;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 OpenClaw 代理管理中心</h1>
+        <div class="subtitle">
+            管理您的AI助手团队：创建专用代理、配置个性化技能、监控使用状态。每个代理都是独立的AI助手，拥有专属的工作区和会话历史。
+        </div>
+    </div>
+    
+    <div class="status-bar">
+        <div class="status-item">
+            <span>服务状态:</span>
+            <div class="status-badge status-healthy" id="serviceStatus">检测中...</div>
+        </div>
+        <div class="status-item">
+            <span>代理总数:</span>
+            <div class="status-badge" id="agentCount">0</div>
+        </div>
+        <div class="status-item">
+            <span>总会话数:</span>
+            <div class="status-badge" id="totalSessions">0</div>
+        </div>
+        <div class="status-item">
+            <span>最后活跃:</span>
+            <div class="status-badge" id="lastActive">--</div>
+        </div>
+    </div>
+    
+    <div class="main-controls">
+        <div class="status-item">
+            <span>📊 系统信息:</span>
+            <div class="status-badge" id="systemInfo">OpenClaw Dashboard</div>
+        </div>
+        <div class="main-buttons">
+            <button class="btn btn-success" onclick="showCreateAgentWizard()">
+                <span>➕</span> 新建代理
+            </button>
+            <button class="btn" onclick="refreshAgents()">
+                <span>🔄</span> 刷新列表
+            </button>
+            <button class="btn btn-secondary" onclick="goToChatDashboard()">
+                <span>💬</span> 聊天面板
+            </button>
+        </div>
+    </div>
+    
+    <div id="agentsList">
+        <div class="loading">
+            <p>正在加载代理列表...</p>
+            <p>请稍候</p>
+        </div>
+    </div>
+    
+    <!-- 向导模态框 -->
+    <div id="agentWizardModal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title" id="wizardTitle">新建代理向导</div>
+                <div class="modal-subtitle" id="wizardSubtitle">分步配置您的专属AI助手</div>
+            </div>
+            
+            <div class="wizard-steps">
+                <div class="wizard-step" id="step1">
+                    <div class="step-circle active" id="stepCircle1">1</div>
+                    <div class="step-label active" id="stepLabel1">选择模板</div>
+                </div>
+                <div class="wizard-step" id="step2">
+                    <div class="step-circle" id="stepCircle2">2</div>
+                    <div class="step-label" id="stepLabel2">基础信息</div>
+                </div>
+                <div class="wizard-step" id="step3">
+                    <div class="step-circle" id="stepCircle3">3</div>
+                    <div class="step-label" id="stepLabel3">模型配置</div>
+                </div>
+                <div class="wizard-step" id="step4">
+                    <div class="step-circle" id="stepCircle4">4</div>
+                    <div class="step-label" id="stepLabel4">环境配置</div>
+                </div>
+                <div class="wizard-step" id="step5">
+                    <div class="step-circle" id="stepCircle5">5</div>
+                    <div class="step-label" id="stepLabel5">技能配置</div>
+                </div>
+            </div>
+            
+            <div class="wizard-content" id="wizardContent">
+                <!-- 步骤内容将通过JavaScript动态加载 -->
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="prevBtn" onclick="prevWizardStep()" style="display: none;">
+                    上一步
+                </button>
+                <button class="btn btn-secondary" id="cancelBtn" onclick="closeAgentWizard()">
+                    取消
+                </button>
+                <button class="btn" id="nextBtn" onclick="nextWizardStep()">
+                    下一步
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 编辑代理模态框 -->
+    <div id="editAgentModal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">编辑代理配置</div>
+                <div class="modal-subtitle" id="editAgentSubtitle"></div>
+            </div>
+            
+            <div id="editAgentContent">
+                <!-- 编辑表单将通过JavaScript动态加载 -->
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeEditAgentModal()">
+                    取消
+                </button>
+                <button class="btn" onclick="saveAgentConfig()">
+                    保存更改
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 删除确认模态框 -->
+    <div id="deleteConfirmModal" class="modal-overlay" style="display: none;">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-title" style="color: #ff416c;">⚠️ 删除代理确认</div>
+                <div class="modal-subtitle" id="deleteConfirmMessage"></div>
+            </div>
+            
+            <div class="wizard-content">
+                <div class="form-group">
+                    <div class="form-label">删除选项</div>
+                    <div style="margin-top: 10px;">
+                        <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; cursor: pointer;">
+                            <input type="checkbox" id="deleteSessions">
+                            <span>同时删除该代理的所有会话文件</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="deleteWorkspace">
+                            <span>同时删除该代理的工作区目录</span>
+                        </label>
+                    </div>
+                    <div class="form-hint" style="margin-top: 15px; color: #ff9800;">
+                        警告：删除操作不可恢复！请谨慎操作。
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeDeleteConfirmModal()">
+                    取消
+                </button>
+                <button class="btn btn-danger" onclick="confirmDeleteAgent()">
+                    确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置
+        const API_BASE = 'http://localhost:3002';
+        let currentAgents = [];
+        let currentWizardStep = 1;
+        let agentTemplates = [
+            {
+                id: 'blank',
+                name: '空白代理',
+                description: '从零开始配置代理',
+                icon: '📝',
+                features: ['自定义所有配置', '灵活性强'],
+                config: {}
+            },
+            {
+                id: 'coder',
+                name: '代码助手',
+                description: '专为编程和开发优化的代理',
+                icon: '💻',
+                features: ['使用推理模型', '启用代码技能', '大上下文窗口'],
+                config: {
+                    model: { primary: 'deepseek/deepseek-reasoner' },
+                    maxConcurrent: 3
+                }
+            },
+            {
+                id: 'writer',
+                name: '写作助手', 
+                description: '专为文档创作和内容写作优化',
+                icon: '✍️',
+                features: ['使用对话模型', '专注写作任务', '工作区指向文档目录'],
+                config: {
+                    model: { primary: 'deepseek/deepseek-chat' },
+                    maxConcurrent: 2
+                }
+            },
+            {
+                id: 'analyst',
+                name: '分析助手',
+                description: '专为数据分析和研究优化',
+                icon: '📊',
+                features: ['使用推理模型', '大上下文窗口', '并发任务支持'],
+                config: {
+                    model: { primary: 'deepseek/deepseek-reasoner' },
+                    maxConcurrent: 4
+                }
+            }
+        ];
+        let selectedTemplate = 'blank';
+        let agentFormData = {
+            template: 'blank',
+            id: '',
+            name: '',
+            displayName: '',
+            description: '',
+            model: { primary: 'deepseek/deepseek-reasoner', fallbacks: [] },
+            workspace: '',
+            maxConcurrent: 2,
+            skills: []
+        };
+        let editingAgentId = null;
+        let deletingAgentId = null;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            testConnection();
+            loadAgents();
+            
+            // 检查是否有URL参数（如从聊天面板跳转过来）
+            const urlParams = new URLSearchParams(window.location.search);
+            const agentId = urlParams.get('agent');
+            if (agentId) {
+                // 可以跳转到该代理的会话列表页
+                console.log('目标代理:', agentId);
+            }
+        });
+        
+        // 测试连接
+        async function testConnection() {
+            const status = document.getElementById('serviceStatus');
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                if (data.status === 'healthy') {
+                    status.textContent = '✅ 健康';
+                    status.className = 'status-badge status-healthy';
+                    return true;
+                } else {
+                    status.textContent = '❌ 异常';
+                    status.className = 'status-badge status-error';
+                    return false;
+                }
+            } catch (error) {
+                console.error('连接测试失败:', error);
+                status.textContent = '❌ 离线';
+                status.className = 'status-badge status-error';
+                return false;
+            }
+        }
+        
+        // 加载代理列表
+        async function loadAgents() {
+            const agentsList = document.getElementById('agentsList');
+            
+            try {
+                agentsList.innerHTML = '<div class="loading"><p>正在加载代理列表...</p><p>请稍候</p></div>';
+                
+                const response = await fetch(`${API_BASE}/api/agents`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentAgents = data.agents;
+                    
+                    // 更新状态栏
+                    document.getElementById('agentCount').textContent = data.count;
+                    
+                    // 计算总会话数和最后活跃时间
+                    let totalSessions = 0;
+                    let lastActiveTime = null;
+                    
+                    data.agents.forEach(agent => {
+                        totalSessions += agent.sessionCount || 0;
+                        if (agent.lastActiveTime && (!lastActiveTime || agent.lastActiveTime > lastActiveTime)) {
+                            lastActiveTime = agent.lastActiveTime;
+                        }
+                    });
+                    
+                    document.getElementById('totalSessions').textContent = totalSessions;
+                    
+                    if (lastActiveTime) {
+                        const date = new Date(lastActiveTime);
+                        document.getElementById('lastActive').textContent = date.toLocaleString('zh-CN');
+                    } else {
+                        document.getElementById('lastActive').textContent = '--';
+                    }
+                    
+                    // 渲染代理卡片
+                    if (data.agents.length === 0) {
+                        agentsList.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🤖</div>
+                                <div class="empty-state-title">暂无代理</div>
+                                <div class="empty-state-description">
+                                    您还没有创建任何代理。代理是独立的AI助手，每个代理可以有专属的配置、技能和会话历史。
+                                </div>
+                                <button class="btn btn-success" onclick="showCreateAgentWizard()">
+                                    <span>➕</span> 创建第一个代理
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        agentsList.innerHTML = `
+                            <div class="agents-grid">
+                                ${data.agents.map(agent => renderAgentCard(agent)).join('')}
+                            </div>
+                        `;
+                    }
+                } else {
+                    agentsList.innerHTML = '<div class="error">无法加载代理数据</div>';
+                }
+            } catch (error) {
+                console.error('加载代理失败:', error);
+                agentsList.innerHTML = `<div class="error">连接失败: ${error.message}</div>`;
+            }
+        }
+        
+        // 渲染代理卡片
+        function renderAgentCard(agent) {
+            const isMainAgent = agent.id === 'main';
+            const badgeType = isMainAgent ? 'badge-main' : 'badge-custom';
+            const badgeText = isMainAgent ? '主代理' : '自定义';
+            const cardClass = isMainAgent ? 'agent-card main-agent' : 'agent-card custom-agent';
+            
+            // 格式化最后活跃时间
+            let lastActiveText = '从未活跃';
+            if (agent.lastActiveTime) {
+                const date = new Date(agent.lastActiveTime);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / (1000 * 60));
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                
+                if (diffMins < 60) {
+                    lastActiveText = `${diffMins}分钟前`;
+                } else if (diffHours < 24) {
+                    lastActiveText = `${diffHours}小时前`;
+                } else if (diffDays < 7) {
+                    lastActiveText = `${diffDays}天前`;
+                } else {
+                    lastActiveText = date.toLocaleDateString('zh-CN');
+                }
+            }
+            
+            // 格式化模型名称
+            let modelText = agent.model || '未知';
+            if (modelText.includes('/')) {
+                modelText = modelText.split('/')[1];
+            }
+            
+            return `
+                <div class="${cardClass}" data-agent-id="${agent.id}">
+                    <div class="agent-header">
+                        <div class="agent-title">
+                            <span>${agent.displayName || agent.name}</span>
+                            <span class="agent-badge ${badgeType}">${badgeText}</span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: #888;">
+                            ID: ${agent.id}
+                        </div>
+                    </div>
+                    
+                    <div class="agent-description">
+                        ${agent.description || '暂无描述'}
+                    </div>
+                    
+                    <div class="agent-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">会话数量</div>
+                            <div class="stat-value">${agent.sessionCount || 0}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">最后活跃</div>
+                            <div class="stat-value">${lastActiveText}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">使用模型</div>
+                            <div class="stat-value">${modelText}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">工作区</div>
+                            <div class="stat-value" title="${agent.workspace}">
+                                ${agent.workspace ? pathBasename(agent.workspace) : '默认'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="agent-actions">
+                        <button class="action-btn action-btn-primary" onclick="viewAgentSessions('${agent.id}')">
+                            <span>💬</span> 查看会话
+                        </button>
+                        <button class="action-btn action-btn-warning" onclick="editAgentConfig('${agent.id}')" ${isMainAgent ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+                            <span>✏️</span> 编辑配置
+                        </button>
+                        <button class="action-btn action-btn-danger" onclick="deleteAgentPrompt('${agent.id}')" ${isMainAgent ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+                            <span>🗑️</span> 删除
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 获取路径的最后一部分
+        function pathBasename(fullPath) {
+            const parts = fullPath.split(/[\\\/]/);
+            return parts[parts.length - 1] || fullPath;
+        }
+        
+        // 刷新代理列表
+        function refreshAgents() {
+            loadAgents();
+        }
+        
+        // 跳转到聊天面板
+        function goToChatDashboard() {
+            window.location.href = 'chat-dashboard.html';
+        }
+        
+        // 查看代理的会话列表
+        function viewAgentSessions(agentId) {
+            // 跳转到该代理的会话列表页
+            // 暂时先跳转到聊天面板，并传递agentId参数
+            window.location.href = `chat-dashboard.html?agent=${agentId}`;
+        }
+        
+        // 编辑代理配置
+        async function editAgentConfig(agentId) {
+            const agent = currentAgents.find(a => a.id === agentId);
+            if (!agent) {
+                alert('代理不存在');
+                return;
+            }
+            
+            editingAgentId = agentId;
+            
+            // 加载模型和技能列表
+            const [modelsResponse, skillsResponse] = await Promise.all([
+                fetch(`${API_BASE}/api/agents/models`),
+                fetch(`${API_BASE}/api/agents/skills`)
+            ]);
+            
+            const modelsData = await modelsResponse.json();
+            const skillsData = await skillsResponse.json();
+            
+            const models = modelsData.success ? modelsData.models : [];
+            const skills = skillsData.success ? skillsData.skills : [];
+            
+            // 填充表单数据
+            agentFormData = {
+                id: agent.id,
+                name: agent.name,
+                displayName: agent.displayName || agent.name,
+                description: agent.description || '',
+                model: agent.config.model || { primary: 'deepseek/deepseek-reasoner', fallbacks: [] },
+                workspace: agent.workspace || '',
+                maxConcurrent: agent.maxConcurrent || 2,
+                skills: []
+            };
+            
+            // 构建编辑表单
+            const editContent = document.getElementById('editAgentContent');
+            editContent.innerHTML = `
+                <div class="form-group">
+                    <label class="form-label">代理ID</label>
+                    <input type="text" class="form-input" value="${agent.id}" disabled>
+                    <div class="form-hint">代理ID创建后不可修改</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">显示名称</label>
+                    <input type="text" class="form-input" id="editDisplayName" value="${agentFormData.displayName}" placeholder="例如：代码助手、写作助手">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">描述</label>
+                    <textarea class="form-textarea" id="editDescription" placeholder="描述代理的用途和特点">${agentFormData.description}</textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">主模型</label>
+                        <select class="form-select" id="editModelPrimary">
+                            ${models.map(model => `
+                                <option value="${model.value}" ${model.value === agentFormData.model.primary ? 'selected' : ''}>
+                                    ${model.label} (${model.provider}/${model.id})
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">最大并发数</label>
+                        <input type="number" class="form-input" id="editMaxConcurrent" value="${agentFormData.maxConcurrent}" min="1" max="10">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">工作区路径</label>
+                    <input type="text" class="form-input" id="editWorkspace" value="${agentFormData.workspace}" placeholder="例如：C:\\Users\\admin\\.openclaw\\workspace-${agent.id}">
+                    <div class="form-hint">代理的工作目录，用于存储文件和处理任务</div>
+                </div>
+                
+                ${skills.length > 0 ? `
+                <div class="form-group">
+                    <label class="form-label">启用技能</label>
+                    <div class="skills-grid">
+                        ${skills.map(skill => `
+                            <div class="skill-checkbox" onclick="toggleSkillSelection(this, '${skill.id}')">
+                                <div>
+                                    <div class="skill-name">${skill.name}</div>
+                                    <div class="skill-description">${skill.description}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="form-hint">点击技能卡片启用/禁用（当前OpenClaw技能配置为全局）</div>
+                </div>
+                ` : ''}
+            `;
+            
+            document.getElementById('editAgentSubtitle').textContent = `编辑代理: ${agent.displayName || agent.id}`;
+            document.getElementById('editAgentModal').style.display = 'flex';
+        }
+        
+        // 保存代理配置
+        async function saveAgentConfig() {
+            if (!editingAgentId) return;
+            
+            const agent = currentAgents.find(a => a.id === editingAgentId);
+            if (!agent) return;
+            
+            const updates = {
+                displayName: document.getElementById('editDisplayName').value,
+                description: document.getElementById('editDescription').value,
+                model: {
+                    primary: document.getElementById('editModelPrimary').value,
+                    fallbacks: []
+                },
+                workspace: document.getElementById('editWorkspace').value,
+                maxConcurrent: parseInt(document.getElementById('editMaxConcurrent').value) || 2
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/agents/${editingAgentId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updates)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ 代理配置更新成功');
+                    closeEditAgentModal();
+                    loadAgents();
+                } else {
+                    alert(`❌ 更新失败: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 关闭编辑模态框
+        function closeEditAgentModal() {
+            document.getElementById('editAgentModal').style.display = 'none';
+            editingAgentId = null;
+        }
+        
+        // 删除代理提示
+        function deleteAgentPrompt(agentId) {
+            if (agentId === 'main') {
+                alert('不能删除主代理（main）');
+                return;
+            }
+            
+            const agent = currentAgents.find(a => a.id === agentId);
+            if (!agent) return;
+            
+            deletingAgentId = agentId;
+            document.getElementById('deleteConfirmMessage').textContent = 
+                `确定要删除代理 "${agent.displayName || agent.id}" 吗？此操作不可恢复！`;
+            
+            // 重置复选框
+            document.getElementById('deleteSessions').checked = false;
+            document.getElementById('deleteWorkspace').checked = false;
+            
+            document.getElementById('deleteConfirmModal').style.display = 'flex';
+        }
+        
+        // 确认删除代理
+        async function confirmDeleteAgent() {
+            if (!deletingAgentId) return;
+            
+            const deleteSessions = document.getElementById('deleteSessions').checked;
+            const deleteWorkspace = document.getElementById('deleteWorkspace').checked;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/agents/${deletingAgentId}?deleteSessions=${deleteSessions}&deleteWorkspace=${deleteWorkspace}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ 代理删除成功');
+                    closeDeleteConfirmModal();
+                    loadAgents();
+                } else {
+                    alert(`❌ 删除失败: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('删除代理失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 关闭删除确认模态框
+        function closeDeleteConfirmModal() {
+            document.getElementById('deleteConfirmModal').style.display = 'none';
+            deletingAgentId = null;
+        }
+        
+        // 显示创建代理向导
+        async function showCreateAgentWizard() {
+            currentWizardStep = 1;
+            selectedTemplate = 'blank';
+            agentFormData = {
+                template: 'blank',
+                id: '',
+                name: '',
+                displayName: '',
+                description: '',
+                model: { primary: 'deepseek/deepseek-reasoner', fallbacks: [] },
+                workspace: '',
+                maxConcurrent: 2,
+                skills: []
+            };
+            
+            // 重置向导状态
+            updateWizardSteps();
+            loadWizardStep(1);
+            
+            document.getElementById('wizardTitle').textContent = '新建代理向导';
+            document.getElementById('wizardSubtitle').textContent = '分步配置您的专属AI助手';
+            document.getElementById('agentWizardModal').style.display = 'flex';
+        }
+        
+        // 更新向导步骤显示
+        function updateWizardSteps() {
+            for (let i = 1; i <= 5; i++) {
+                const circle = document.getElementById(`stepCircle${i}`);
+                const label = document.getElementById(`stepLabel${i}`);
+                
+                if (i < currentWizardStep) {
+                    circle.className = 'step-circle completed';
+                    label.className = 'step-label';
+                } else if (i === currentWizardStep) {
+                    circle.className = 'step-circle active';
+                    label.className = 'step-label active';
+                } else {
+                    circle.className = 'step-circle';
+                    label.className = 'step-label';
+                }
+            }
+            
+            // 更新按钮显示
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            
+            if (currentWizardStep === 1) {
+                prevBtn.style.display = 'none';
+                nextBtn.textContent = '下一步';
+                cancelBtn.textContent = '取消';
+            } else if (currentWizardStep === 5) {
+                prevBtn.style.display = 'inline-block';
+                nextBtn.textContent = '完成创建';
+                cancelBtn.textContent = '取消';
+            } else {
+                prevBtn.style.display = 'inline-block';
+                nextBtn.textContent = '下一步';
+                cancelBtn.textContent = '取消';
+            }
+        }
+        
+        // 加载向导步骤内容
+        async function loadWizardStep(step) {
+            const wizardContent = document.getElementById('wizardContent');
+            
+            switch (step) {
+                case 1: // 选择模板
+                    wizardContent.innerHTML = `
+                        <div class="form-group">
+                            <div class="form-label">选择代理模板</div>
+                            <div class="form-hint">模板提供预定义的配置，快速创建专用代理</div>
+                            
+                            <div class="templates-grid">
+                                ${agentTemplates.map(template => `
+                                    <div class="template-card ${selectedTemplate === template.id ? 'selected' : ''}" 
+                                         onclick="selectTemplate('${template.id}')">
+                                        <div class="template-icon">${template.icon}</div>
+                                        <div class="template-title">${template.name}</div>
+                                        <div class="template-description">${template.description}</div>
+                                        <div class="template-features">
+                                            ${template.features.map(f => `• ${f}`).join('<br>')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    break;
+                    
+                case 2: // 基础信息
+                    // 生成默认ID（基于显示名称或随机）
+                    let defaultId = '';
+                    if (agentFormData.displayName) {
+                        defaultId = agentFormData.displayName.toLowerCase()
+                            .replace(/[^a-z0-9]/g, '-')
+                            .replace(/-+/g, '-')
+                            .replace(/^-|-$/g, '');
+                    } else if (selectedTemplate !== 'blank') {
+                        const template = agentTemplates.find(t => t.id === selectedTemplate);
+                        defaultId = template ? `${template.id}-${Date.now().toString().slice(-4)}` : '';
+                    }
+                    
+                    agentFormData.id = defaultId;
+                    
+                    wizardContent.innerHTML = `
+                        <div class="form-group">
+                            <label class="form-label">代理ID *</label>
+                            <input type="text" class="form-input" id="agentId" 
+                                   value="${defaultId}" 
+                                   placeholder="例如：coder、writer、analyst"
+                                   oninput="updateAgentId(this.value)">
+                            <div class="form-hint">
+                                代理的唯一标识，只能包含字母、数字、连字符和下划线。创建后不可修改。
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">显示名称 *</label>
+                            <input type="text" class="form-input" id="agentDisplayName" 
+                                   value="${agentFormData.displayName || ''}" 
+                                   placeholder="例如：代码助手、写作助手"
+                                   oninput="updateAgentDisplayName(this.value)">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">描述</label>
+                            <textarea class="form-textarea" id="agentDescription" 
+                                      placeholder="描述代理的用途和特点"
+                                      oninput="updateAgentDescription(this.value)">${agentFormData.description || ''}</textarea>
+                        </div>
+                    `;
+                    break;
+                    
+                case 3: // 模型配置
+                    // 动态加载模型列表
+                    try {
+                        const response = await fetch(`${API_BASE}/api/agents/models`);
+                        const data = await response.json();
+                        const models = data.success ? data.models : [];
+                        
+                        wizardContent.innerHTML = `
+                            <div class="form-group">
+                                <label class="form-label">主模型 *</label>
+                                <select class="form-select" id="modelPrimary" onchange="updateModelPrimary(this.value)">
+                                    ${models.map(model => `
+                                        <option value="${model.value}" ${model.value === agentFormData.model.primary ? 'selected' : ''}>
+                                            ${model.label} (${model.provider}/${model.id})
+                                        </option>
+                                    `).join('')}
+                                </select>
+                                <div class="form-hint">代理主要使用的AI模型</div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">后备模型</label>
+                                <div class="form-hint" style="margin-bottom: 10px;">
+                                    主模型不可用时自动切换的后备模型（多选）
+                                </div>
+                                <div class="skills-grid">
+                                    ${models.map(model => `
+                                        <div class="skill-checkbox" onclick="toggleFallbackModel(this, '${model.value}')">
+                                            <div>
+                                                <div class="skill-name">${model.label}</div>
+                                                <div class="skill-description">${model.provider}/${model.id}</div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    } catch (error) {
+                        wizardContent.innerHTML = `<div class="error">加载模型列表失败: ${error.message}</div>`;
+                    }
+                    break;
+                    
+                case 4: // 环境配置
+                    const defaultWorkspace = `C:\\Users\\admin\\.openclaw\\workspace-${agentFormData.id || 'new-agent'}`;
+                    
+                    wizardContent.innerHTML = `
+                        <div class="form-group">
+                            <label class="form-label">工作区路径</label>
+                            <input type="text" class="form-input" id="agentWorkspace" 
+                                   value="${agentFormData.workspace || defaultWorkspace}" 
+                                   placeholder="例如：C:\\Users\\admin\\.openclaw\\workspace-coder"
+                                   oninput="updateAgentWorkspace(this.value)">
+                            <div class="form-hint">
+                                代理的工作目录，用于存储文件和处理任务。如果目录不存在，系统会自动创建。
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">最大并发数</label>
+                                <input type="number" class="form-input" id="agentMaxConcurrent" 
+                                       value="${agentFormData.maxConcurrent || 2}" min="1" max="10"
+                                       oninput="updateAgentMaxConcurrent(this.value)">
+                                <div class="form-hint">代理同时处理的最大任务数量</div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">上下文窗口</label>
+                                <select class="form-select" id="agentContextWindow" onchange="updateAgentContextWindow(this.value)">
+                                    <option value="32000">32K tokens</option>
+                                    <option value="64000">64K tokens</option>
+                                    <option value="128000" selected>128K tokens</option>
+                                    <option value="256000">256K tokens</option>
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                    
+                case 5: // 技能配置
+                    try {
+                        const response = await fetch(`${API_BASE}/api/agents/skills`);
+                        const data = await response.json();
+                        const skills = data.success ? data.skills : [];
+                        
+                        wizardContent.innerHTML = `
+                            <div class="form-group">
+                                <div class="form-label">启用技能</div>
+                                <div class="form-hint" style="margin-bottom: 15px;">
+                                    选择要为此代理启用的技能。技能是代理的扩展能力，可以执行特定任务。
+                                </div>
+                                
+                                ${skills.length > 0 ? `
+                                    <div class="skills-grid">
+                                        ${skills.map(skill => `
+                                            <div class="skill-checkbox" onclick="toggleSkillSelection(this, '${skill.id}')">
+                                                <div>
+                                                    <div class="skill-name">${skill.name}</div>
+                                                    <div class="skill-description">${skill.description}</div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <div class="form-hint" style="margin-top: 15px;">
+                                        注意：当前OpenClaw技能配置为全局设置，此处选择仅作记录。
+                                    </div>
+                                ` : `
+                                    <div class="empty-state" style="padding: 30px 0;">
+                                        <div class="empty-state-icon">🔧</div>
+                                        <div class="empty-state-title">暂无可用技能</div>
+                                        <div class="empty-state-description">
+                                            系统中未安装任何技能。您可以通过OpenClaw技能市场安装技能。
+                                        </div>
+                                    </div>
+                                `}
+                            </div>
+                            
+                            <div class="success" style="margin-top: 20px;">
+                                <strong>✅ 配置完成</strong><br>
+                                代理 "${agentFormData.displayName || agentFormData.id}" 即将创建。
+                                系统将自动创建工作区目录并更新配置文件。
+                            </div>
+                        `;
+                    } catch (error) {
+                        wizardContent.innerHTML = `<div class="error">加载技能列表失败: ${error.message}</div>`;
+                    }
+                    break;
+            }
+            
+            updateWizardSteps();
+        }
+        
+        // 选择模板
+        function selectTemplate(templateId) {
+            selectedTemplate = templateId;
+            agentFormData.template = templateId;
+            
+            // 应用模板配置
+            const template = agentTemplates.find(t => t.id === templateId);
+            if (template && template.config) {
+                if (template.config.model) {
+                    agentFormData.model = { ...agentFormData.model, ...template.config.model };
+                }
+                if (template.config.maxConcurrent !== undefined) {
+                    agentFormData.maxConcurrent = template.config.maxConcurrent;
+                }
+                
+                // 如果模板有名字，更新显示名称
+                if (templateId !== 'blank' && !agentFormData.displayName) {
+                    agentFormData.displayName = template.name;
+                }
+            }
+            
+            // 重新渲染模板选择界面
+            loadWizardStep(1);
+        }
+        
+        // 更新代理ID
+        function updateAgentId(id) {
+            agentFormData.id = id;
+        }
+        
+        // 更新代理显示名称
+        function updateAgentDisplayName(name) {
+            agentFormData.displayName = name;
+            agentFormData.name = name;
+        }
+        
+        // 更新代理描述
+        function updateAgentDescription(description) {
+            agentFormData.description = description;
+        }
+        
+        // 更新主模型
+        function updateModelPrimary(model) {
+            agentFormData.model.primary = model;
+        }
+        
+        // 切换后备模型
+        function toggleFallbackModel(element, model) {
+            element.classList.toggle('selected');
+            
+            const index = agentFormData.model.fallbacks.indexOf(model);
+            if (index === -1) {
+                agentFormData.model.fallbacks.push(model);
+            } else {
+                agentFormData.model.fallbacks.splice(index, 1);
+            }
+        }
+        
+        // 更新工作区路径
+        function updateAgentWorkspace(workspace) {
+            agentFormData.workspace = workspace;
+        }
+        
+        // 更新最大并发数
+        function updateAgentMaxConcurrent(value) {
+            agentFormData.maxConcurrent = parseInt(value) || 2;
+        }
+        
+        // 更新上下文窗口
+        function updateAgentContextWindow(value) {
+            // 暂存上下文窗口设置
+            agentFormData.contextWindow = parseInt(value) || 128000;
+        }
+        
+        // 切换技能选择
+        function toggleSkillSelection(element, skillId) {
+            element.classList.toggle('selected');
+            
+            const index = agentFormData.skills.indexOf(skillId);
+            if (index === -1) {
+                agentFormData.skills.push(skillId);
+            } else {
+                agentFormData.skills.splice(index, 1);
+            }
+        }
+        
+        // 上一步
+        function prevWizardStep() {
+            if (currentWizardStep > 1) {
+                currentWizardStep--;
+                loadWizardStep(currentWizardStep);
+            }
+        }
+        
+        // 下一步
+        async function nextWizardStep() {
+            if (currentWizardStep < 5) {
+                // 验证当前步骤
+                if (!validateCurrentStep()) {
+                    return;
+                }
+                
+                currentWizardStep++;
+                await loadWizardStep(currentWizardStep);
+            } else {
+                // 完成创建
+                await createAgentFromWizard();
+            }
+        }
+        
+        // 验证当前步骤
+        function validateCurrentStep() {
+            switch (currentWizardStep) {
+                case 2: // 基础信息验证
+                    if (!agentFormData.id || agentFormData.id.trim() === '') {
+                        alert('请填写代理ID');
+                        return false;
+                    }
+                    
+                    // 验证ID格式
+                    const idRegex = /^[a-zA-Z0-9_-]+$/;
+                    if (!idRegex.test(agentFormData.id)) {
+                        alert('代理ID只能包含字母、数字、连字符和下划线');
+                        return false;
+                    }
+                    
+                    if (!agentFormData.displayName || agentFormData.displayName.trim() === '') {
+                        alert('请填写代理显示名称');
+                        return false;
+                    }
+                    break;
+                    
+                case 3: // 模型配置验证
+                    if (!agentFormData.model.primary) {
+                        alert('请选择主模型');
+                        return false;
+                    }
+                    break;
+            }
+            
+            return true;
+        }
+        
+        // 从向导创建代理
+        async function createAgentFromWizard() {
+            // 最终验证
+            if (!agentFormData.id || !agentFormData.displayName || !agentFormData.model.primary) {
+                alert('请完成所有必填项');
+                return;
+            }
+            
+            // 检查代理是否已存在
+            const existingAgent = currentAgents.find(a => a.id === agentFormData.id);
+            if (existingAgent) {
+                alert(`代理 "${agentFormData.id}" 已存在，请使用其他ID`);
+                return;
+            }
+            
+            // 准备创建数据
+            const agentData = {
+                id: agentFormData.id,
+                name: agentFormData.name || agentFormData.displayName,
+                displayName: agentFormData.displayName,
+                description: agentFormData.description || '',
+                model: agentFormData.model,
+                workspace: agentFormData.workspace || `C:\\Users\\admin\\.openclaw\\workspace-${agentFormData.id}`,
+                maxConcurrent: agentFormData.maxConcurrent || 2
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/agents`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(agentData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ 代理创建成功！\n\n名称: ${data.agent.displayName}\nID: ${data.agent.id}\n工作区: ${data.agent.workspace}`);
+                    closeAgentWizard();
+                    loadAgents();
+                } else {
+                    let errorMsg = `❌ 创建失败: ${data.error}`;
+                    if (data.availableAgents && data.availableAgents.length > 0) {
+                        errorMsg += `\n\n可用的Agent: ${data.availableAgents.join(', ')}`;
+                    }
+                    if (data.suggestion) {
+                        errorMsg += `\n${data.suggestion}`;
+                    }
+                    alert(errorMsg);
+                }
+            } catch (error) {
+                console.error('创建代理失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 关闭代理向导
+        function closeAgentWizard() {
+            document.getElementById('agentWizardModal').style.display = 'none';
+        }
+        
+        // 自动测试连接
+        setTimeout(testConnection, 1000);
+    </script>
+</body>
+</html>

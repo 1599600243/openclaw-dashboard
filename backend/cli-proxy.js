@@ -7,6 +7,7 @@ const express = require('express');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.CLI_PROXY_PORT || 3002;
@@ -523,6 +524,1008 @@ app.get('/api/debug/session/:sessionId/paths', (req, res) => {
     directoryStructure: dirResults,
     note: '用于调试会话文件位置'
   });
+});
+
+/**
+ * 功能2：自定义会话管理 API
+ */
+
+/**
+ * 创建新会话
+ */
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { label, agentId = 'main' } = req.body;
+    
+    if (!label || typeof label !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: '缺少label参数或格式不正确'
+      });
+    }
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    
+    // 检查agent目录是否存在
+    const agentDir = path.join(stateDir, 'agents', agentId);
+    if (!fs.existsSync(agentDir)) {
+      return res.status(400).json({
+        success: false,
+        error: `Agent目录不存在: ${agentId}`,
+        availableAgents: await getAvailableAgents(stateDir),
+        suggestion: '请使用以下可用的Agent: ' + (await getAvailableAgents(stateDir)).join(', ')
+      });
+    }
+    
+    // 确保sessions目录存在
+    const sessionsDir = path.join(agentDir, 'sessions');
+    if (!fs.existsSync(sessionsDir)) {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+    }
+    
+    const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
+    
+    // 读取现有的sessions.json
+    let sessionsData = {};
+    if (fs.existsSync(sessionsJsonPath)) {
+      const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+      try {
+        sessionsData = JSON.parse(content);
+      } catch (error) {
+        console.warn('无法解析sessions.json，将创建新文件:', error.message);
+      }
+    }
+    
+    // 生成唯一的sessionId和sessionKey
+    const sessionId = crypto.randomUUID();
+    let sessionKey = label;
+    
+    // 确保sessionKey唯一
+    const existingKeys = Object.keys(sessionsData);
+    let finalSessionKey = sessionKey;
+    let counter = 1;
+    while (existingKeys.includes(`agent:${agentId}:${finalSessionKey}`)) {
+      finalSessionKey = `${sessionKey}-${counter}`;
+      counter++;
+    }
+    
+    // 创建会话文件路径
+    const sessionFilePath = path.join(sessionsDir, `${sessionId}.jsonl`);
+    
+    // 创建空的jsonl文件
+    fs.writeFileSync(sessionFilePath, '', 'utf8');
+    
+    // 构建会话元数据
+    const now = Date.now();
+    const sessionEntry = {
+      sessionId: sessionId,
+      updatedAt: now,
+      systemSent: false,
+      abortedLastRun: false,
+      chatType: 'direct',
+      deliveryContext: {
+        channel: 'dashboard'
+      },
+      lastChannel: 'dashboard',
+      origin: {
+        provider: 'dashboard',
+        surface: 'dashboard',
+        chatType: 'direct'
+      },
+      sessionFile: sessionFilePath,
+      compactionCount: 0,
+      modelProvider: 'deepseek',
+      model: 'deepseek-reasoner',
+      totalTokensFresh: true,
+      cacheRead: 0,
+      cacheWrite: 0,
+      contextTokens: 128000,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      agentId: agentId,
+      customLabel: label // 存储原始label
+    };
+    
+    // 添加到sessions.json
+    sessionsData[`agent:${agentId}:${finalSessionKey}`] = sessionEntry;
+    
+    // 写回文件
+    fs.writeFileSync(sessionsJsonPath, JSON.stringify(sessionsData, null, 2), 'utf8');
+    
+    res.json({
+      success: true,
+      session: {
+        sessionId: sessionId,
+        sessionKey: finalSessionKey,
+        label: label,
+        agentId: agentId,
+        filePath: sessionFilePath,
+        createdAt: now
+      },
+      message: '会话创建成功'
+    });
+    
+  } catch (error) {
+    console.error('创建会话失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取可用Agent列表
+ */
+async function getAvailableAgents(stateDir) {
+  try {
+    const agentsDir = path.join(stateDir, 'agents');
+    if (!fs.existsSync(agentsDir)) {
+      return [];
+    }
+    
+    const items = fs.readdirSync(agentsDir, { withFileTypes: true });
+    return items
+      .filter(item => item.isDirectory())
+      .map(item => item.name);
+  } catch (error) {
+    console.error('获取Agent列表失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 获取可用的Agent列表（增强版，读取openclaw.json配置）
+ */
+app.get('/api/agents', async (req, res) => {
+  try {
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    // 读取OpenClaw配置文件
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    const agentsList = config.agents?.list || [];
+    const agentsDefaults = config.agents?.defaults || {};
+    
+    // 获取每个Agent的详细信息和会话数量
+    const agentsWithDetails = await Promise.all(agentsList.map(async (agentConfig) => {
+      const agentId = agentConfig.id;
+      const sessionsDir = path.join(stateDir, 'agents', agentId, 'sessions');
+      let sessionCount = 0;
+      let lastActiveTime = null;
+      
+      if (fs.existsSync(sessionsDir)) {
+        try {
+          const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
+          if (fs.existsSync(sessionsJsonPath)) {
+            const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+            const sessionsData = JSON.parse(content);
+            sessionCount = Object.keys(sessionsData).length;
+            
+            // 获取最后活跃时间
+            const sessions = Object.values(sessionsData);
+            if (sessions.length > 0) {
+              const latestSession = sessions.reduce((latest, session) => {
+                return (session.updatedAt > latest.updatedAt) ? session : latest;
+              });
+              lastActiveTime = latestSession.updatedAt;
+            }
+          }
+        } catch (error) {
+          console.warn(`无法读取Agent ${agentId}的会话数据:`, error.message);
+        }
+      }
+      
+      // 合并默认配置和代理特定配置
+      const mergedConfig = {
+        ...agentsDefaults,
+        ...agentConfig
+      };
+      
+      // 确定使用的模型
+      let model = 'unknown';
+      if (mergedConfig.model) {
+        if (typeof mergedConfig.model === 'string') {
+          model = mergedConfig.model;
+        } else if (mergedConfig.model.primary) {
+          model = mergedConfig.model.primary;
+        }
+      }
+      
+      return {
+        id: agentId,
+        name: agentConfig.name || (agentId === 'main' ? '主Agent' : agentId),
+        displayName: agentConfig.displayName || (agentId === 'main' ? '主Agent' : agentId),
+        description: agentConfig.description || (agentId === 'main' ? '默认主Agent' : `自定义Agent: ${agentId}`),
+        sessionCount: sessionCount,
+        lastActiveTime: lastActiveTime,
+        model: model,
+        workspace: mergedConfig.workspace || agentsDefaults.workspace,
+        maxConcurrent: mergedConfig.maxConcurrent || agentsDefaults.maxConcurrent,
+        isDefault: agentId === 'main',
+        config: agentConfig,
+        directory: path.join(stateDir, 'agents', agentId)
+      };
+    }));
+    
+    res.json({
+      success: true,
+      agents: agentsWithDetails,
+      defaults: agentsDefaults,
+      count: agentsWithDetails.length
+    });
+    
+  } catch (error) {
+    console.error('获取Agent列表失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取可用模型列表
+ */
+app.get('/api/agents/models', async (req, res) => {
+  try {
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    const models = [];
+    
+    // 从config.models.providers读取所有可用模型
+    if (config.models?.providers) {
+      Object.keys(config.models.providers).forEach(provider => {
+        const providerConfig = config.models.providers[provider];
+        if (providerConfig.models && Array.isArray(providerConfig.models)) {
+          providerConfig.models.forEach(model => {
+            models.push({
+              value: `${provider}/${model.id}`,
+              label: model.name || model.id,
+              provider: provider,
+              id: model.id,
+              contextWindow: model.contextWindow || 128000,
+              maxTokens: model.maxTokens || 8192,
+              reasoning: model.reasoning || false
+            });
+          });
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      models: models,
+      count: models.length
+    });
+    
+  } catch (error) {
+    console.error('获取模型列表失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取已安装技能列表
+ */
+app.get('/api/agents/skills', async (req, res) => {
+  try {
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    const skills = [];
+    
+    // 从config.skills.entries读取技能
+    if (config.skills?.entries) {
+      Object.keys(config.skills.entries).forEach(skillId => {
+        const skillConfig = config.skills.entries[skillId];
+        skills.push({
+          id: skillId,
+          name: skillId,
+          enabled: skillConfig.enabled !== false,
+          description: skillConfig.description || `技能: ${skillId}`
+        });
+      });
+    }
+    
+    res.json({
+      success: true,
+      skills: skills,
+      count: skills.length
+    });
+    
+  } catch (error) {
+    console.error('获取技能列表失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 创建新代理
+ */
+app.post('/api/agents', async (req, res) => {
+  try {
+    const {
+      id,
+      name,
+      displayName,
+      description,
+      model,
+      workspace,
+      maxConcurrent = 2,
+      skills = [],
+      template
+    } = req.body;
+    
+    // 验证必填参数
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: '代理ID不能为空且必须是字符串'
+      });
+    }
+    
+    // 验证ID格式（只允许字母、数字、连字符、下划线）
+    const idRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!idRegex.test(id)) {
+      return res.status(400).json({
+        success: false,
+        error: '代理ID只能包含字母、数字、连字符和下划线'
+      });
+    }
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    // 读取配置文件
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    // 检查代理是否已存在
+    const existingAgent = config.agents?.list?.find(agent => agent.id === id);
+    if (existingAgent) {
+      return res.status(400).json({
+        success: false,
+        error: `代理 "${id}" 已存在`
+      });
+    }
+    
+    // 构建代理配置 - 只使用OpenClaw官方支持的字段
+    const agentConfig = {
+      id: id
+    };
+    
+    // 添加可选字段 - 只使用OpenClaw官方支持的字段
+    if (name && name !== id) agentConfig.name = name;
+    
+    // 模型配置 - OpenClaw支持字符串或对象格式
+    if (model) {
+      if (typeof model === 'string') {
+        agentConfig.model = model;
+      } else if (model.primary) {
+        agentConfig.model = {
+          primary: model.primary,
+          fallbacks: model.fallbacks || []
+        };
+      }
+    }
+    
+    // 工作区配置 - OpenClaw支持workspace字段
+    let finalWorkspace = workspace;
+    if (!finalWorkspace) {
+      // 默认工作区路径
+      finalWorkspace = path.join(stateDir, `workspace-${id}`);
+    }
+    agentConfig.workspace = finalWorkspace;
+    
+    // 注意：OpenClaw不直接支持以下字段：
+    // - displayName (使用name字段代替)
+    // - description (不存储到配置中，可在前端缓存)
+    // - maxConcurrent (使用agents.defaults中的全局设置)
+    // - skills (技能是全局配置，不是按代理的)
+    
+    // 注意：displayName和description等自定义字段可以存储在前端的localStorage中
+    // 但不应写入openclaw.json，因为OpenClaw会验证配置并拒绝这些字段
+    
+    // 创建工作区目录
+    if (!fs.existsSync(finalWorkspace)) {
+      fs.mkdirSync(finalWorkspace, { recursive: true });
+      console.log(`已创建工作区目录: ${finalWorkspace}`);
+    }
+    
+    // 创建Agent目录
+    const agentDir = path.join(stateDir, 'agents', id);
+    if (!fs.existsSync(agentDir)) {
+      fs.mkdirSync(agentDir, { recursive: true });
+    }
+    
+    // 创建sessions目录
+    const sessionsDir = path.join(agentDir, 'sessions');
+    if (!fs.existsSync(sessionsDir)) {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+    }
+    
+    // 初始化空的sessions.json
+    const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
+    if (!fs.existsSync(sessionsJsonPath)) {
+      fs.writeFileSync(sessionsJsonPath, '{}', 'utf8');
+    }
+    
+    // 添加到配置
+    if (!config.agents) config.agents = {};
+    if (!config.agents.list) config.agents.list = [];
+    config.agents.list.push(agentConfig);
+    
+    // 保存配置
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    
+    // 热加载配置
+    try {
+      await runCommand('openclaw config reload', 10000);
+    } catch (error) {
+      console.warn('配置热加载失败（不影响代理创建）:', error.message);
+    }
+    
+    res.json({
+      success: true,
+      agent: {
+        id: id,
+        name: name || id,
+        // 注意：displayName和description不是OpenClaw配置的一部分
+        // 这些字段可以存储在前端缓存中，但不在openclaw.json中
+        displayName: displayName || name || id,
+        description: description || '',
+        workspace: finalWorkspace,
+        config: agentConfig
+      },
+      message: '代理创建成功，配置已更新',
+      note: 'displayName和description字段仅用于前端显示，不会保存到openclaw.json配置中'
+    });
+    
+  } catch (error) {
+    console.error('创建代理失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 更新代理配置
+ */
+app.put('/api/agents/:agentId', async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const updates = req.body;
+    
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: '更新数据不能为空且必须是对象'
+      });
+    }
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    // 读取配置文件
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    // 查找代理
+    const agentIndex = config.agents?.list?.findIndex(agent => agent.id === agentId);
+    if (agentIndex === -1 || agentIndex === undefined) {
+      return res.status(404).json({
+        success: false,
+        error: `代理 "${agentId}" 不存在`
+      });
+    }
+    
+    // 更新代理配置
+    const currentAgent = config.agents.list[agentIndex];
+    
+    // 只更新OpenClaw官方支持的字段
+    // OpenClaw支持的代理字段: id, name, workspace, model
+    const supportedFields = ['name', 'workspace', 'model'];
+    
+    // 过滤更新，只保留支持的字段
+    Object.keys(updates).forEach(key => {
+      if (key !== 'id' && supportedFields.includes(key)) {
+        currentAgent[key] = updates[key];
+      } else if (key !== 'id') {
+        // 记录但不保存不支持的字段
+        console.log(`忽略不支持的代理字段: ${key} = ${JSON.stringify(updates[key])}`);
+        console.log(`OpenClaw配置验证会拒绝此字段，请使用前端缓存存储自定义字段`);
+      }
+    });
+    
+    // 处理工作区目录（如果工作区路径变更）
+    if (updates.workspace && updates.workspace !== currentAgent.workspace) {
+      const newWorkspace = updates.workspace;
+      if (!fs.existsSync(newWorkspace)) {
+        fs.mkdirSync(newWorkspace, { recursive: true });
+        console.log(`已创建新工作区目录: ${newWorkspace}`);
+      }
+    }
+    
+    // 保存配置
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    
+    // 热加载配置
+    try {
+      await runCommand('openclaw config reload', 10000);
+    } catch (error) {
+      console.warn('配置热加载失败（不影响代理更新）:', error.message);
+    }
+    
+    res.json({
+      success: true,
+      agent: currentAgent,
+      message: '代理配置更新成功'
+    });
+    
+  } catch (error) {
+    console.error('更新代理失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 删除代理
+ */
+app.delete('/api/agents/:agentId', async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const { deleteSessions = false, deleteWorkspace = false } = req.query;
+    
+    // 不允许删除main代理
+    if (agentId === 'main') {
+      return res.status(400).json({
+        success: false,
+        error: '不能删除主代理（main）'
+      });
+    }
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const configPath = path.join(stateDir, 'openclaw.json');
+    
+    // 读取配置文件
+    const configContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    // 查找代理
+    const agentIndex = config.agents?.list?.findIndex(agent => agent.id === agentId);
+    if (agentIndex === -1 || agentIndex === undefined) {
+      return res.status(404).json({
+        success: false,
+        error: `代理 "${agentId}" 不存在`
+      });
+    }
+    
+    const agentConfig = config.agents.list[agentIndex];
+    
+    // 删除会话文件（如果选择）
+    if (deleteSessions === 'true') {
+      const sessionsDir = path.join(stateDir, 'agents', agentId, 'sessions');
+      if (fs.existsSync(sessionsDir)) {
+        try {
+          // 删除所有jsonl文件
+          const files = fs.readdirSync(sessionsDir);
+          files.forEach(file => {
+            if (file.endsWith('.jsonl')) {
+              fs.unlinkSync(path.join(sessionsDir, file));
+            }
+          });
+          // 删除sessions.json
+          const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
+          if (fs.existsSync(sessionsJsonPath)) {
+            fs.unlinkSync(sessionsJsonPath);
+          }
+          console.log(`已删除代理 ${agentId} 的所有会话文件`);
+        } catch (error) {
+          console.warn(`删除会话文件失败:`, error.message);
+        }
+      }
+    }
+    
+    // 删除工作区目录（如果选择）
+    if (deleteWorkspace === 'true' && agentConfig.workspace) {
+      const workspacePath = agentConfig.workspace;
+      if (fs.existsSync(workspacePath) && workspacePath.includes(stateDir)) {
+        try {
+          // 安全删除：只删除在.openclaw目录下的工作区
+          fs.rmSync(workspacePath, { recursive: true, force: true });
+          console.log(`已删除工作区目录: ${workspacePath}`);
+        } catch (error) {
+          console.warn(`删除工作区目录失败:`, error.message);
+        }
+      }
+    }
+    
+    // 从配置中移除代理
+    config.agents.list.splice(agentIndex, 1);
+    
+    // 保存配置
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    
+    // 热加载配置
+    try {
+      await runCommand('openclaw config reload', 10000);
+    } catch (error) {
+      console.warn('配置热加载失败（不影响代理删除）:', error.message);
+    }
+    
+    res.json({
+      success: true,
+      deletedAgent: {
+        id: agentId,
+        name: agentConfig.name || agentId,
+        workspace: agentConfig.workspace
+      },
+      message: '代理删除成功'
+    });
+    
+  } catch (error) {
+    console.error('删除代理失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 重新加载配置
+ */
+app.post('/api/config/reload', async (req, res) => {
+  try {
+    await runCommand('openclaw config reload', 10000);
+    
+    res.json({
+      success: true,
+      message: '配置重新加载成功'
+    });
+  } catch (error) {
+    console.error('重新加载配置失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取单个代理的会话列表
+ */
+app.get('/api/agents/:agentId/sessions', async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const sessionsJsonPath = path.join(stateDir, 'agents', agentId, 'sessions', 'sessions.json');
+    
+    if (!fs.existsSync(sessionsJsonPath)) {
+      return res.json({
+        success: true,
+        agentId: agentId,
+        sessions: [],
+        count: 0,
+        note: '该代理暂无会话'
+      });
+    }
+    
+    const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+    let sessionsData = {};
+    try {
+      sessionsData = JSON.parse(content);
+    } catch (error) {
+      console.warn(`无法解析代理 ${agentId} 的sessions.json:`, error.message);
+      return res.json({
+        success: true,
+        agentId: agentId,
+        sessions: [],
+        count: 0,
+        note: '会话数据解析失败'
+      });
+    }
+    
+    // 转换格式为前端友好格式
+    const sessions = Object.entries(sessionsData).map(([sessionKey, sessionInfo]) => {
+      const match = sessionKey.match(/^agent:([^:]+):(.+)$/);
+      const keyAgentId = match ? match[1] : 'unknown';
+      const sessionLabel = match ? match[2] : sessionKey;
+      
+      return {
+        sessionKey: sessionKey,
+        sessionId: sessionInfo.sessionId,
+        label: sessionInfo.customLabel || sessionLabel,
+        agentId: keyAgentId,
+        updatedAt: sessionInfo.updatedAt,
+        messageCount: 0, // 可以通过读取文件计算
+        model: sessionInfo.model || 'unknown',
+        lastActive: sessionInfo.updatedAt ? new Date(sessionInfo.updatedAt).toLocaleString() : '从未'
+      };
+    });
+    
+    res.json({
+      success: true,
+      agentId: agentId,
+      sessions: sessions,
+      count: sessions.length
+    });
+    
+  } catch (error) {
+    console.error('获取代理会话列表失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 删除会话
+ */
+app.delete('/api/sessions/:sessionKey', async (req, res) => {
+  try {
+    const { sessionKey } = req.params;
+    const { agentId = 'main' } = req.query;
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const sessionsJsonPath = path.join(stateDir, 'agents', agentId, 'sessions', 'sessions.json');
+    
+    // 读取sessions.json
+    if (!fs.existsSync(sessionsJsonPath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'sessions.json文件不存在'
+      });
+    }
+    
+    const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+    let sessionsData = {};
+    try {
+      sessionsData = JSON.parse(content);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: '无法解析sessions.json文件'
+      });
+    }
+    
+    // 查找会话
+    const fullKey = `agent:${agentId}:${sessionKey}`;
+    const sessionEntry = sessionsData[fullKey];
+    
+    if (!sessionEntry) {
+      return res.status(404).json({
+        success: false,
+        error: `会话 ${sessionKey} 不存在`
+      });
+    }
+    
+    // 删除会话文件
+    const sessionFilePath = sessionEntry.sessionFile;
+    if (fs.existsSync(sessionFilePath)) {
+      fs.unlinkSync(sessionFilePath);
+    }
+    
+    // 从sessions.json中移除
+    delete sessionsData[fullKey];
+    
+    // 写回文件
+    fs.writeFileSync(sessionsJsonPath, JSON.stringify(sessionsData, null, 2), 'utf8');
+    
+    res.json({
+      success: true,
+      deletedSession: {
+        sessionKey: sessionKey,
+        sessionId: sessionEntry.sessionId,
+        agentId: agentId
+      },
+      message: '会话删除成功'
+    });
+    
+  } catch (error) {
+    console.error('删除会话失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 重命名会话
+ */
+app.put('/api/sessions/:sessionKey', async (req, res) => {
+  try {
+    const { sessionKey } = req.params;
+    const { newLabel, agentId = 'main' } = req.body;
+    
+    if (!newLabel || typeof newLabel !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: '缺少newLabel参数或格式不正确'
+      });
+    }
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const sessionsJsonPath = path.join(stateDir, 'agents', agentId, 'sessions', 'sessions.json');
+    
+    // 读取sessions.json
+    if (!fs.existsSync(sessionsJsonPath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'sessions.json文件不存在'
+      });
+    }
+    
+    const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+    let sessionsData = {};
+    try {
+      sessionsData = JSON.parse(content);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: '无法解析sessions.json文件'
+      });
+    }
+    
+    // 查找旧会话
+    const oldFullKey = `agent:${agentId}:${sessionKey}`;
+    const sessionEntry = sessionsData[oldFullKey];
+    
+    if (!sessionEntry) {
+      return res.status(404).json({
+        success: false,
+        error: `会话 ${sessionKey} 不存在`
+      });
+    }
+    
+    // 检查新名称是否唯一
+    let newSessionKey = newLabel;
+    const existingKeys = Object.keys(sessionsData);
+    let counter = 1;
+    while (existingKeys.includes(`agent:${agentId}:${newSessionKey}`) && newSessionKey !== sessionKey) {
+      newSessionKey = `${newLabel}-${counter}`;
+      counter++;
+    }
+    
+    // 更新customLabel字段
+    sessionEntry.customLabel = newLabel;
+    sessionEntry.updatedAt = Date.now();
+    
+    // 如果key发生变化，需要移动条目
+    if (newSessionKey !== sessionKey) {
+      // 移除旧key
+      delete sessionsData[oldFullKey];
+      // 添加新key
+      sessionsData[`agent:${agentId}:${newSessionKey}`] = sessionEntry;
+    } else {
+      // 更新现有条目
+      sessionsData[oldFullKey] = sessionEntry;
+    }
+    
+    // 写回文件
+    fs.writeFileSync(sessionsJsonPath, JSON.stringify(sessionsData, null, 2), 'utf8');
+    
+    res.json({
+      success: true,
+      renamedSession: {
+        oldKey: sessionKey,
+        newKey: newSessionKey,
+        newLabel: newLabel,
+        sessionId: sessionEntry.sessionId,
+        agentId: agentId
+      },
+      message: '会话重命名成功'
+    });
+    
+  } catch (error) {
+    console.error('重命名会话失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取会话详情
+ */
+app.get('/api/sessions/:sessionKey/details', async (req, res) => {
+  try {
+    const { sessionKey } = req.params;
+    const { agentId = 'main' } = req.query;
+    
+    const stateDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const sessionsJsonPath = path.join(stateDir, 'agents', agentId, 'sessions', 'sessions.json');
+    
+    // 读取sessions.json
+    if (!fs.existsSync(sessionsJsonPath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'sessions.json文件不存在'
+      });
+    }
+    
+    const content = fs.readFileSync(sessionsJsonPath, 'utf8');
+    let sessionsData = {};
+    try {
+      sessionsData = JSON.parse(content);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: '无法解析sessions.json文件'
+      });
+    }
+    
+    // 查找会话
+    const fullKey = `agent:${agentId}:${sessionKey}`;
+    const sessionEntry = sessionsData[fullKey];
+    
+    if (!sessionEntry) {
+      return res.status(404).json({
+        success: false,
+        error: `会话 ${sessionKey} 不存在`
+      });
+    }
+    
+    // 计算消息数量
+    let messageCount = 0;
+    if (sessionEntry.sessionFile && fs.existsSync(sessionEntry.sessionFile)) {
+      try {
+        const fileContent = fs.readFileSync(sessionEntry.sessionFile, 'utf8');
+        const lines = fileContent.trim().split('\n').filter(line => line.trim());
+        messageCount = lines.length;
+      } catch (error) {
+        console.warn('无法读取会话文件:', error.message);
+      }
+    }
+    
+    res.json({
+      success: true,
+      session: {
+        sessionKey: sessionKey,
+        sessionId: sessionEntry.sessionId,
+        label: sessionEntry.customLabel || sessionKey,
+        agentId: agentId,
+        updatedAt: sessionEntry.updatedAt,
+        messageCount: messageCount,
+        model: sessionEntry.model || 'unknown',
+        filePath: sessionEntry.sessionFile,
+        exists: fs.existsSync(sessionEntry.sessionFile || '')
+      }
+    });
+    
+  } catch (error) {
+    console.error('获取会话详情失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // 错误处理

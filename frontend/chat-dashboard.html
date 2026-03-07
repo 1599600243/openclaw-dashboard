@@ -70,9 +70,45 @@
             color: #ff416c;
         }
         
+        .agent-selector-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.25);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .agent-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .agent-select {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 0.95rem;
+            min-width: 200px;
+            cursor: pointer;
+        }
+        
+        .agent-select:focus {
+            outline: none;
+            border-color: rgba(0, 219, 222, 0.5);
+        }
+        
+        .agent-info {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
         .main-container {
             display: flex;
-            height: calc(100vh - 140px);
+            height: calc(100vh - 180px);
         }
         
         /* 左侧会话列表 */
@@ -121,6 +157,33 @@
         
         .btn-secondary:hover {
             background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-success {
+            background: linear-gradient(45deg, #11998e, #38ef7d);
+        }
+        
+        .btn-success:hover {
+            background: linear-gradient(45deg, #0d7a71, #2dcc67);
+            box-shadow: 0 5px 15px rgba(17, 153, 142, 0.4);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(45deg, #f7971e, #ffd200);
+        }
+        
+        .btn-warning:hover {
+            background: linear-gradient(45deg, #d6811a, #e6b800);
+            box-shadow: 0 5px 15px rgba(247, 151, 30, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(45deg, #ff416c, #ff4b2b);
+        }
+        
+        .btn-danger:hover {
+            background: linear-gradient(45deg, #e6395c, #e64226);
+            box-shadow: 0 5px 15px rgba(255, 65, 108, 0.4);
         }
         
         .session-item {
@@ -344,6 +407,55 @@
             overflow-y: auto;
         }
         
+        /* 增强的消息显示样式 */
+        .no-messages {
+            text-align: center;
+            padding: 40px 20px;
+            color: #aaa;
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+        
+        .no-messages p {
+            margin-bottom: 15px;
+        }
+        
+        .api-note {
+            background: rgba(0, 219, 222, 0.1);
+            border: 1px solid rgba(0, 219, 222, 0.3);
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin: 15px 0;
+            color: #00dbde;
+            font-size: 0.95rem;
+            text-align: left;
+        }
+        
+        .api-warning {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin: 15px 0;
+            color: #ffcc00;
+            font-size: 0.95rem;
+            text-align: left;
+        }
+        
+        .error {
+            background: rgba(255, 65, 108, 0.1);
+            border: 1px solid rgba(255, 65, 108, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px;
+            color: #ff416c;
+            text-align: center;
+        }
+        
+        .error p {
+            margin-bottom: 10px;
+        }
+        
         /* 响应式设计 */
         @media (max-width: 768px) {
             .main-container {
@@ -388,6 +500,21 @@
         </div>
     </div>
     
+    <div class="agent-selector-bar">
+        <div class="agent-selector">
+            <span>🤖 代理:</span>
+            <select class="agent-select" id="agentSelect" onchange="changeAgent(this.value)">
+                <option value="" disabled selected>正在加载代理...</option>
+            </select>
+            <span class="agent-info" id="agentInfo">选择代理以查看其会话</span>
+        </div>
+        <div class="agent-selector">
+            <button class="btn btn-secondary" onclick="goToAgentDashboard()" style="padding: 8px 16px; font-size: 0.9rem;">
+                <span>⚙️</span> 代理管理
+            </button>
+        </div>
+    </div>
+    
     <div class="main-container">
         <!-- 左侧会话列表 -->
         <div class="session-list-panel">
@@ -395,7 +522,9 @@
             
             <div class="session-controls">
                 <button class="btn" onclick="loadSessions()">🔄 刷新</button>
-                <button class="btn btn-secondary" onclick="clearChat()">🗑️ 清空聊天</button>
+                <button class="btn btn-success" onclick="showCreateSessionDialog()">➕ 新建会话</button>
+                <button class="btn btn-warning" onclick="showRenameSessionDialog()" id="renameButton" disabled>✏️ 重命名</button>
+                <button class="btn btn-danger" onclick="deleteSelectedSession()" id="deleteButton" disabled>🗑️ 删除</button>
                 <button class="btn btn-secondary" onclick="exportChat()">💾 导出</button>
             </div>
             
@@ -457,6 +586,9 @@
                 }
             });
             
+            // 加载代理列表
+            setTimeout(loadAgents, 500);
+            
             // 加载会话列表
             setTimeout(loadSessions, 1000);
         });
@@ -494,11 +626,24 @@
             try {
                 sessionList.innerHTML = '<div class="loading">正在加载会话...</div>';
                 
-                const response = await fetch(`${API_BASE}/api/sessions`);
+                // 获取当前选择的代理
+                const agentSelect = document.getElementById('agentSelect');
+                const currentAgentId = agentSelect ? agentSelect.value : 'main';
+                
+                let apiUrl;
+                if (currentAgentId) {
+                    // 使用特定代理的会话API
+                    apiUrl = `${API_BASE}/api/agents/${currentAgentId}/sessions`;
+                } else {
+                    // 回退到旧版API（获取所有会话）
+                    apiUrl = `${API_BASE}/api/sessions`;
+                }
+                
+                const response = await fetch(apiUrl);
                 const data = await response.json();
                 
-                if (data.success && data.data && data.data.sessions) {
-                    const sessions = data.data.sessions;
+                if (data.success && data.sessions) {
+                    const sessions = data.sessions;
                     sessionCount.textContent = sessions.length;
                     
                     if (sessions.length === 0) {
@@ -510,8 +655,8 @@
                         const sessionId = session.sessionId || session.sessionKey;
                         const displayId = sessionId.length > 20 ? sessionId.substring(0, 20) + '...' : sessionId;
                         const messageCount = session.messageCount || 0;
-                        const lastActive = session.lastMessageAt ? 
-                            new Date(session.lastMessageAt).toLocaleString() : '从未';
+                        const lastActive = session.lastActive || 
+                            (session.updatedAt ? new Date(session.updatedAt).toLocaleString() : '从未');
                         
                         return `
                         <div class="session-item" 
@@ -520,7 +665,7 @@
                             <div class="session-name">${session.label}</div>
                             <div class="session-details">
                                 ID: ${displayId}<br>
-                                Agent: ${session.agentId} | 模型: ${session.model}
+                                Agent: ${session.agentId} | 模型: ${session.model || 'unknown'}
                             </div>
                             <div class="session-stats">
                                 <span>消息: ${messageCount}</span>
@@ -576,6 +721,14 @@
             document.getElementById('messageInput').focus();
             document.getElementById('sendButton').disabled = false;
             
+            // 重置聊天消息区域滚动位置到顶部
+            const chatMessages = document.getElementById('chatMessages');
+            if (chatMessages) {
+                chatMessages.scrollTop = 0;
+                // 显示加载状态
+                chatMessages.innerHTML = '<div class="loading">加载对话历史中...</div>';
+            }
+            
             // 加载聊天历史
             loadChatMessages(sessionId);
         }
@@ -596,17 +749,62 @@
                     messageCount.textContent = data.count || data.messages.length;
                     
                     if (data.messages && data.messages.length > 0) {
-                        renderMessages(data.messages, chatMessages);
+                        // 按时间正序排序（最旧的在前，最新的在后）
+                        const sortedMessages = [...data.messages].sort((a, b) => {
+                            // 将时间字符串转换为时间戳数字
+                            const getTimestamp = (msg) => {
+                                const timeStr = msg.timestamp || msg.createdAt;
+                                if (!timeStr) return 0;
+                                
+                                try {
+                                    const date = new Date(timeStr);
+                                    return date.getTime(); // 返回毫秒时间戳
+                                } catch {
+                                    return 0;
+                                }
+                            };
+                            
+                            const timeA = getTimestamp(a);
+                            const timeB = getTimestamp(b);
+                            return timeA - timeB; // 正序：时间小的在前（最早的在前）
+                        });
+                        
+                        renderMessages(sortedMessages, chatMessages);
                     } else {
-                        chatMessages.innerHTML = `
-                            <div class="loading">
+                        // 没有消息时，显示更详细的信息
+                        let html = `
+                            <div class="no-messages">
                                 <p>📭 暂无历史消息</p>
                                 <p>发送第一条消息开始对话吧！</p>
-                            </div>
                         `;
+                        
+                        // 显示API返回的附加信息（如果有）
+                        if (data.note) {
+                            html += `<p class="api-note">📝 ${data.note}</p>`;
+                        }
+                        
+                        if (data.warning) {
+                            html += `<p class="api-warning">⚠️ ${data.warning}</p>`;
+                        }
+                        
+                        html += `</div>`;
+                        chatMessages.innerHTML = html;
                     }
                 } else {
-                    chatMessages.innerHTML = '<div class="error">无法加载消息</div>';
+                    // API返回失败时显示错误信息
+                    let errorHtml = `<div class="error">
+                        <p>❌ 无法加载消息</p>`;
+                    
+                    if (data.error) {
+                        errorHtml += `<p>错误: ${data.error}</p>`;
+                    }
+                    
+                    if (data.suggestion) {
+                        errorHtml += `<p>建议: ${data.suggestion}</p>`;
+                    }
+                    
+                    errorHtml += `</div>`;
+                    chatMessages.innerHTML = errorHtml;
                 }
             } catch (error) {
                 console.error('加载聊天失败:', error);
@@ -614,14 +812,79 @@
             }
         }
         
+        // 统一时间格式化函数（移到外部，避免重复创建）
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '未知时间';
+            
+            try {
+                const date = new Date(timestamp);
+                // 使用一致的时间格式：YYYY/MM/DD HH:MM:SS
+                const year = date.getFullYear();
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                const seconds = date.getSeconds().toString().padStart(2, '0');
+                
+                return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+            } catch (e) {
+                return '时间格式错误';
+            }
+        }
+        
+        // 清理内容中的重复时间戳
+        function cleanDuplicateTimestamp(content, displayTimestamp) {
+            if (typeof content !== 'string') return content;
+            
+            // 移除常见的重复时间戳模式
+            const timestampPatterns = [
+                /\d{4}\/\d{1,2}\/\d{1,2} \d{2}:\d{2}:\d{2}/g,  // YYYY/MM/DD HH:MM:SS
+                /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g,       // ISO格式
+                /\d{2}:\d{2}:\d{2}/g,                         // 仅时间
+            ];
+            
+            let cleanedContent = content;
+            timestampPatterns.forEach(pattern => {
+                // 如果内容开头就是时间戳，可能重复了，移除它
+                const match = cleanedContent.match(pattern);
+                if (match && cleanedContent.startsWith(match[0])) {
+                    // 检查这个时间戳是否与显示的时间戳匹配
+                    const contentTime = match[0];
+                    if (contentTime === displayTimestamp || 
+                        contentTime.includes(displayTimestamp.substring(0, 10))) {
+                        // 移除开头的重复时间戳
+                        cleanedContent = cleanedContent.substring(contentTime.length).trim();
+                    }
+                }
+            });
+            
+            return cleanedContent;
+        }
+        
         // 渲染消息
         function renderMessages(messages, container) {
             container.innerHTML = messages.map(msg => {
-                const role = msg.role || 'unknown';
-                const timestamp = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '未知时间';
+                // 处理嵌套消息格式（OpenClaw的messages.jsonl格式）
+                let actualMsg = msg;
+                let timestamp = msg.timestamp;
+                
+                // 如果消息有message字段，使用内部消息
+                if (msg.message && typeof msg.message === 'object') {
+                    actualMsg = msg.message;
+                    // 使用外部的timestamp，如果没有则使用内部的
+                    if (!timestamp && actualMsg.timestamp) {
+                        timestamp = actualMsg.timestamp;
+                    }
+                }
+                
+                const role = actualMsg.role || 'unknown';
+                const displayTimestamp = formatTimestamp(timestamp);
                 
                 // 智能提取可读内容
-                const content = extractReadableContent(msg);
+                let content = extractReadableContent(actualMsg);
+                
+                // 清理内容中可能重复的时间戳显示
+                content = cleanDuplicateTimestamp(content, displayTimestamp);
                 
                 // 根据角色确定消息样式
                 let roleDisplay = role;
@@ -640,8 +903,8 @@
                 
                 // 处理工具消息的显示
                 let toolContent = '';
-                if (role === 'tool' && msg.toolName) {
-                    roleDisplay += ` (${msg.toolName})`;
+                if (role === 'tool' && actualMsg.toolName) {
+                    roleDisplay += ` (${actualMsg.toolName})`;
                 }
                 
                 return `
@@ -649,20 +912,29 @@
                         <div class="message-header">
                             <div class="message-role">
                                 ${roleDisplay}
-                                ${msg.toolName ? `<span class="message-tool-name">${msg.toolName}</span>` : ''}
+                                ${actualMsg.toolName ? `<span class="message-tool-name">${actualMsg.toolName}</span>` : ''}
                             </div>
-                            <div class="message-time">${timestamp}</div>
+                            <div class="message-time">${displayTimestamp}</div>
                         </div>
                         <div class="message-content">${escapeHtml(content)}</div>
                     </div>
                 `;
             }).join('');
             
-            // 滚动到底部
-            container.scrollTop = container.scrollHeight;
+            // 滚动到底部，确保UI稳定
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 50);
+            
+            // 额外的UI稳定化：确保容器可见
+            setTimeout(() => {
+                if (container.scrollHeight > container.clientHeight) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }, 100);
         }
         
-        // 智能提取可读内容
+        // 智能提取可读内容 - 增强版，支持更多消息格式
         function extractReadableContent(msg) {
             // 如果content是字符串，直接返回
             if (typeof msg.content === 'string') {
@@ -685,14 +957,36 @@
                             return `🔧 调用工具: ${item.toolName}`;
                         } else if (item.type === 'toolResult') {
                             return `✅ 工具执行完成`;
+                        } else if (item.type === 'image') {
+                            return `🖼️ 图片: ${item.url || item.path || '图片内容'}`;
+                        } else if (item.type === 'file') {
+                            return `📎 文件: ${item.name || item.path || '文件附件'}`;
+                        } else if (item.type === 'error') {
+                            return `❌ 错误: ${item.error || item.message || '操作失败'}`;
+                        } else if (item.type === 'code' && item.code) {
+                            return `\`\`\`${item.language || ''}\n${item.code}\n\`\`\``;
+                        } else if (item.text) {
+                            // 如果有text字段，优先使用
+                            return item.text;
+                        } else if (item.message) {
+                            // 如果有message字段
+                            return item.message;
                         } else {
-                            return JSON.stringify(item, null, 2);
+                            // 其他对象尝试格式化
+                            try {
+                                return JSON.stringify(item, null, 2);
+                            } catch {
+                                return String(item);
+                            }
                         }
                     }
                     return '';
-                }).filter(text => text.trim());
+                }).filter(text => text && text.trim());
                 
-                return texts.join('\n\n');
+                if (texts.length > 0) {
+                    return texts.join('\n\n');
+                }
+                // 如果数组中没有可提取内容，继续尝试其他字段
             }
             
             // 如果content是对象
@@ -700,6 +994,21 @@
                 // 检查是否是AI回复格式
                 if (msg.content.role === 'assistant' && Array.isArray(msg.content.content)) {
                     return extractReadableContent({ content: msg.content.content });
+                }
+                
+                // 检查是否有text字段
+                if (msg.content.text) {
+                    return msg.content.text;
+                }
+                
+                // 检查是否有message字段
+                if (msg.content.message) {
+                    return msg.content.message;
+                }
+                
+                // 检查是否是工具调用结果
+                if (msg.content.toolName) {
+                    return `🔧 ${msg.content.toolName}: ${msg.content.result || '执行完成'}`;
                 }
                 
                 // 否则返回格式化的JSON
@@ -710,24 +1019,57 @@
                 }
             }
             
-            // 备选字段
-            if (msg.text) {
+            // 检查msg本身是否有直接可用的字段
+            if (msg.text && typeof msg.text === 'string') {
                 return msg.text;
             }
             
-            if (msg.message) {
+            if (msg.message && typeof msg.message === 'string') {
                 return msg.message;
             }
             
-            if (msg.result) {
+            if (msg.result && typeof msg.result === 'string') {
                 return msg.result;
             }
             
-            // 最终备选
+            // 检查OpenClaw特定格式
+            if (msg.response && typeof msg.response === 'string') {
+                return msg.response;
+            }
+            
+            if (msg.output && typeof msg.output === 'string') {
+                return msg.output;
+            }
+            
+            if (msg.data && typeof msg.data === 'string') {
+                return msg.data;
+            }
+            
+            // 对于工具消息，尝试提取更多信息
+            if (msg.tool) {
+                return `🔧 工具调用: ${msg.tool}${msg.toolResult ? ` -> 结果: ${msg.toolResult}` : ''}`;
+            }
+            
+            // 最终备选：显示消息类型和简化信息
+            if (msg.role) {
+                return `[${msg.role}消息] ${msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ''}`;
+            }
+            
+            // 最终备选：尝试格式化整个对象
             try {
-                return JSON.stringify(msg, null, 2);
+                const simplified = {};
+                for (const key in msg) {
+                    if (typeof msg[key] === 'string' || typeof msg[key] === 'number' || typeof msg[key] === 'boolean') {
+                        simplified[key] = msg[key];
+                    } else if (Array.isArray(msg[key])) {
+                        simplified[key] = `[数组，长度: ${msg[key].length}]`;
+                    } else if (msg[key] && typeof msg[key] === 'object') {
+                        simplified[key] = `{对象}`;
+                    }
+                }
+                return JSON.stringify(simplified, null, 2);
             } catch {
-                return String(msg);
+                return `消息数据 (无法解析的格式)`;
             }
         }
         
@@ -910,6 +1252,290 @@
         
         // 自动测试连接
         setTimeout(testConnection, 1000);
+        
+        // 功能2：自定义会话管理函数
+        
+        // 显示创建会话对话框
+        async function showCreateSessionDialog() {
+            // 获取当前选择的代理
+            const agentSelect = document.getElementById('agentSelect');
+            const currentAgentId = agentSelect ? agentSelect.value : 'main';
+            
+            // 获取当前代理的名称显示
+            let currentAgentName = currentAgentId;
+            if (agentSelect && agentSelect.options) {
+                const selectedOption = Array.from(agentSelect.options).find(opt => opt.value === currentAgentId);
+                if (selectedOption) {
+                    currentAgentName = selectedOption.textContent.split('(')[0].trim();
+                }
+            }
+            
+            const label = prompt(`在代理 "${currentAgentName}" 下创建新会话\n\n请输入会话名称:`, '新会话');
+            if (!label || label.trim() === '') {
+                alert('会话名称不能为空');
+                return;
+            }
+            
+            // 可选：让用户选择其他代理
+            if (confirm(`将在代理 "${currentAgentName}" 下创建会话 "${label.trim()}"\n\n要更改代理吗？`)) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/agents`);
+                    const data = await response.json();
+                    
+                    let agentList = '可用的Agent:\n';
+                    if (data.success && data.agents && data.agents.length > 0) {
+                        data.agents.forEach(agent => {
+                            agentList += `• ${agent.id} (${agent.name}) - ${agent.sessionCount}个会话\n`;
+                        });
+                    } else {
+                        agentList = '可用Agent: main\n';
+                    }
+                    
+                    const newAgentId = prompt(`请选择代理:\n\n${agentList}`, currentAgentId) || currentAgentId;
+                    createSession(label.trim(), newAgentId);
+                } catch (error) {
+                    console.error('获取Agent列表失败:', error);
+                    createSession(label.trim(), currentAgentId);
+                }
+            } else {
+                createSession(label.trim(), currentAgentId);
+            }
+        }
+        
+        // 创建新会话
+        async function createSession(label, agentId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/sessions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ label, agentId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ 会话创建成功\n名称: ${data.session.label}\nID: ${data.session.sessionId}\nAgent: ${data.session.agentId}`);
+                    // 刷新会话列表
+                    loadSessions();
+                } else {
+                    // 显示详细的错误信息，包括可用的Agent
+                    let errorMessage = `❌ 创建失败: ${data.error}`;
+                    if (data.availableAgents && data.availableAgents.length > 0) {
+                        errorMessage += `\n\n可用的Agent: ${data.availableAgents.join(', ')}`;
+                    }
+                    if (data.suggestion) {
+                        errorMessage += `\n${data.suggestion}`;
+                    }
+                    alert(errorMessage);
+                }
+            } catch (error) {
+                console.error('创建会话失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 显示重命名会话对话框
+        function showRenameSessionDialog() {
+            if (!currentSession || !currentSessionLabel) {
+                alert('请先选择一个会话');
+                return;
+            }
+            
+            const newLabel = prompt(`重命名会话 "${currentSessionLabel}" 为:`, currentSessionLabel);
+            if (!newLabel || newLabel.trim() === '') {
+                alert('会话名称不能为空');
+                return;
+            }
+            
+            renameSession(currentSessionLabel, newLabel.trim());
+        }
+        
+        // 重命名会话
+        async function renameSession(oldKey, newLabel) {
+            try {
+                // 获取当前选择的代理
+                const agentSelect = document.getElementById('agentSelect');
+                const currentAgentId = agentSelect ? agentSelect.value : 'main';
+                
+                const response = await fetch(`${API_BASE}/api/sessions/${oldKey}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ newLabel, agentId: currentAgentId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ 会话重命名成功\n旧名称: ${oldKey}\n新名称: ${data.renamedSession.newKey}`);
+                    // 刷新会话列表
+                    loadSessions();
+                    // 如果重命名的是当前会话，更新当前会话标签
+                    if (currentSessionLabel === oldKey) {
+                        currentSessionLabel = data.renamedSession.newKey;
+                        document.getElementById('currentSession').textContent = currentSessionLabel;
+                        document.getElementById('chatTitle').textContent = `💬 ${currentSessionLabel}`;
+                    }
+                } else {
+                    alert(`❌ 重命名失败: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('重命名会话失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 删除选中的会话
+        async function deleteSelectedSession() {
+            if (!currentSession || !currentSessionLabel) {
+                alert('请先选择一个会话');
+                return;
+            }
+            
+            if (!confirm(`确定要删除会话 "${currentSessionLabel}" 吗？此操作不可恢复！`)) {
+                return;
+            }
+            
+            try {
+                // 获取当前选择的代理
+                const agentSelect = document.getElementById('agentSelect');
+                const currentAgentId = agentSelect ? agentSelect.value : 'main';
+                
+                const response = await fetch(`${API_BASE}/api/sessions/${currentSessionLabel}?agentId=${currentAgentId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ 会话删除成功\n已删除: ${currentSessionLabel}`);
+                    // 清除当前会话选择
+                    currentSession = null;
+                    currentSessionLabel = null;
+                    document.getElementById('currentSession').textContent = '未选择';
+                    document.getElementById('chatTitle').textContent = '请选择一个会话开始聊天';
+                    document.getElementById('chatSubtitle').textContent = '选择左侧的会话查看完整对话历史';
+                    document.getElementById('messageInput').disabled = true;
+                    document.getElementById('messageInput').placeholder = '输入消息...';
+                    document.getElementById('sendButton').disabled = true;
+                    document.getElementById('deleteButton').disabled = true;
+                    document.getElementById('renameButton').disabled = true;
+                    document.getElementById('chatMessages').innerHTML = '<div class="loading">请选择一个会话开始聊天</div>';
+                    // 刷新会话列表
+                    loadSessions();
+                } else {
+                    alert(`❌ 删除失败: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('删除会话失败:', error);
+                alert(`❌ 请求失败: ${error.message}`);
+            }
+        }
+        
+        // 代理管理相关函数
+        
+        // 加载代理列表
+        async function loadAgents() {
+            try {
+                const response = await fetch(`${API_BASE}/api/agents`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const agentSelect = document.getElementById('agentSelect');
+                    const agentInfo = document.getElementById('agentInfo');
+                    
+                    // 清空现有选项
+                    agentSelect.innerHTML = '';
+                    
+                    if (data.agents && data.agents.length > 0) {
+                        // 添加代理选项
+                        data.agents.forEach(agent => {
+                            const option = document.createElement('option');
+                            option.value = agent.id;
+                            option.textContent = `${agent.displayName || agent.name} (${agent.sessionCount || 0}个会话)`;
+                            if (agent.id === 'main') {
+                                option.selected = true;
+                                agentInfo.textContent = `当前代理: ${agent.displayName || agent.name}`;
+                            }
+                            agentSelect.appendChild(option);
+                        });
+                        
+                        // 如果有URL参数指定代理，选择该代理
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const targetAgent = urlParams.get('agent');
+                        if (targetAgent) {
+                            const targetOption = Array.from(agentSelect.options).find(opt => opt.value === targetAgent);
+                            if (targetOption) {
+                                targetOption.selected = true;
+                                changeAgent(targetAgent);
+                            }
+                        }
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = '暂无代理';
+                        agentSelect.appendChild(option);
+                        agentInfo.textContent = '请先创建代理';
+                    }
+                } else {
+                    console.error('加载代理失败:', data.error);
+                    const agentSelect = document.getElementById('agentSelect');
+                    agentSelect.innerHTML = '<option value="">加载失败</option>';
+                }
+            } catch (error) {
+                console.error('加载代理列表失败:', error);
+                const agentSelect = document.getElementById('agentSelect');
+                agentSelect.innerHTML = '<option value="">连接失败</option>';
+                document.getElementById('agentInfo').textContent = '连接失败';
+            }
+        }
+        
+        // 切换代理
+        async function changeAgent(agentId) {
+            if (!agentId) return;
+            
+            const agentSelect = document.getElementById('agentSelect');
+            const selectedOption = Array.from(agentSelect.options).find(opt => opt.value === agentId);
+            const agentName = selectedOption ? selectedOption.textContent.split('(')[0].trim() : agentId;
+            
+            document.getElementById('agentInfo').textContent = `当前代理: ${agentName}`;
+            
+            // 更新当前代理上下文
+            // 注意：这里需要更新会话加载逻辑以使用新的代理
+            // 暂时先记录当前代理，并刷新会话列表
+            console.log(`切换到代理: ${agentId}`);
+            
+            // 刷新会话列表（需要修改loadSessions函数以支持不同代理）
+            // 暂时使用默认代理
+            loadSessions();
+        }
+        
+        // 跳转到代理管理面板
+        function goToAgentDashboard() {
+            window.location.href = 'agent-dashboard.html';
+        }
+        
+        // 更新会话选择状态
+        function updateSessionControls() {
+            const hasSelection = currentSession !== null;
+            document.getElementById('deleteButton').disabled = !hasSelection;
+            document.getElementById('renameButton').disabled = !hasSelection;
+        }
+        
+        // 修改selectSession函数以更新控件状态
+        const originalSelectSession = window.selectSession;
+        window.selectSession = function(sessionId, sessionLabel) {
+            if (originalSelectSession) {
+                originalSelectSession(sessionId, sessionLabel);
+            }
+            updateSessionControls();
+        };
+        
+        // 初始更新控件状态
+        updateSessionControls();
     </script>
 </body>
 </html>
