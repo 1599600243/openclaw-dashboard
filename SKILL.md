@@ -1,6 +1,6 @@
 ---
 name: openclaw-dashboard
-version: 1.0.0
+version: 1.1.0
 author: 逍遥 & 贾维斯
 description: OpenClaw控制面板 - 完全绕过Gateway认证，提供稳定可靠的会话管理和消息发送功能
 ---

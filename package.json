@@ -15,7 +15,13 @@
     "test:api": "curl http://localhost:3002/health",
     "test:frontend": "curl http://localhost:3003/fixed-dashboard.html",
     "clean": "rm -rf node_modules package-lock.json",
-    "lint": "eslint backend/*.js"
+    "lint": "eslint backend/*.js",
+    "publish:clawhub": "node scripts/publish-to-clawhub.js",
+    "publish:clawhub:win": "powershell -ExecutionPolicy Bypass -File scripts/publish-to-clawhub.ps1",
+    "publish:version": "node scripts/publish-to-clawhub.js --version",
+    "release:major": "node scripts/release-helper.js major",
+    "release:minor": "node scripts/release-helper.js minor",
+    "release:patch": "node scripts/release-helper.js patch"
   },
   "keywords": [
     "openclaw",
@@ -31,12 +37,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/openclaw-dashboard.git"
+    "url": "https://github.com/1599600243/openclaw-dashboard.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/openclaw-dashboard/issues"
+    "url": "https://github.com/1599600243/openclaw-dashboard/issues"
   },
-  "homepage": "https://github.com/yourusername/openclaw-dashboard#readme",
+  "homepage": "https://github.com/1599600243/openclaw-dashboard#readme",
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
