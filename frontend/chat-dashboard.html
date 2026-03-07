@@ -631,12 +631,15 @@
                 const currentAgentId = agentSelect ? agentSelect.value : 'main';
                 
                 let apiUrl = `${API_BASE}/api/sessions`;
+                if (currentAgentId && currentAgentId !== '') {
+                  apiUrl += `?agent=${encodeURIComponent(currentAgentId)}`;
+                }
                 
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 
-                if (data.success && data.sessions) {
-                    const sessions = data.sessions;
+                if (data.success && data.data && data.data.sessions) {
+                    const sessions = data.data.sessions;
                     sessionCount.textContent = sessions.length;
                     
                     if (sessions.length === 0) {
@@ -734,8 +737,12 @@
             try {
                 chatMessages.innerHTML = '<div class="loading">加载对话历史中...</div>';
                 
-                // 使用新的API路径 /api/session/:sessionId/messages
-                const response = await fetch(`${API_BASE}/api/session/${sessionId}/messages`);
+                // 获取当前选择的代理
+                const agentSelect = document.getElementById('agentSelect');
+                const currentAgentId = agentSelect ? agentSelect.value : 'main';
+                
+                // 使用新的API路径 /api/session/:sessionId/messages，传递agent参数
+                const response = await fetch(`${API_BASE}/api/session/${sessionId}/messages?agent=${encodeURIComponent(currentAgentId)}`);
                 const data = await response.json();
                 
                 if (data.success) {
@@ -1397,7 +1404,8 @@
                 const agentSelect = document.getElementById('agentSelect');
                 const currentAgentId = agentSelect ? agentSelect.value : 'main';
                 
-                const response = await fetch(`${API_BASE}/api/sessions/${currentSessionLabel}?agentId=${currentAgentId}`, {
+                // 使用sessionId（currentSession）而不是sessionLabel
+                const response = await fetch(`${API_BASE}/api/sessions/${currentSession}?agentId=${currentAgentId}`, {
                     method: 'DELETE'
                 });
                 
@@ -1506,12 +1514,25 @@
             document.getElementById('agentInfo').textContent = `当前代理: ${agentName}`;
             
             // 更新当前代理上下文
-            // 注意：这里需要更新会话加载逻辑以使用新的代理
-            // 暂时先记录当前代理，并刷新会话列表
             console.log(`切换到代理: ${agentId}`);
             
-            // 刷新会话列表（需要修改loadSessions函数以支持不同代理）
-            // 暂时使用默认代理
+            // 重置当前会话选择（因为会话属于不同的代理）
+            currentSession = null;
+            currentSessionLabel = null;
+            document.getElementById('currentSession').textContent = '未选择';
+            document.getElementById('chatTitle').textContent = '请选择一个会话开始聊天';
+            document.getElementById('chatSubtitle').textContent = '选择左侧的会话查看完整对话历史';
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="loading">
+                    <p>👈 从左侧选择一个会话</p>
+                    <p>或者创建一个新的会话开始对话</p>
+                </div>
+            `;
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('messageInput').placeholder = '输入消息... (Enter发送，Shift+Enter换行)';
+            document.getElementById('sendButton').disabled = true;
+            
+            // 刷新会话列表（现在loadSessions函数支持代理过滤）
             loadSessions();
         }
         

@@ -35,11 +35,11 @@ const server = http.createServer((req, res) => {
   const requestPath = parsedUrl.pathname.startsWith('/') ? parsedUrl.pathname.substring(1) : parsedUrl.pathname;
   
   // 尝试在frontend目录中查找文件
-  const frontendPath = path.join('./frontend', requestPath);
+  const frontendPath = path.join('../frontend', requestPath);
   
   // 如果请求根路径或空路径，返回默认页面
   if (requestPath === '' || requestPath === '/' || requestPath === 'index.html') {
-    pathname = './frontend/simple-dashboard.html';
+    pathname = '../frontend/simple-dashboard.html';
   } else {
     // 检查frontend目录中是否存在文件
     pathname = frontendPath;
@@ -118,7 +118,7 @@ server.listen(PORT, () => {
   console.log('========================================');
   
   // 显示frontend目录中的可用文件
-  fs.readdir('./frontend', (err, files) => {
+  fs.readdir('../frontend', (err, files) => {
     if (!err) {
       const htmlFiles = files.filter(f => f.endsWith('.html'));
       if (htmlFiles.length > 0) {

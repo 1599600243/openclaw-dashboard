@@ -12,6 +12,291 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.CLI_PROXY_PORT || 3002;
 
+/**
+ * 清理字符串中的非法UTF-8字符和JSON特殊字符
+ * 简化版本：只做最基本的清理，避免过度处理
+ */
+function cleanString(str) {
+  if (typeof str !== 'string') return str;
+  
+  // 第一步：移除所有ANSI转义序列（包括完整和不完整的）
+  let cleaned = str
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // 移除完整的ANSI转义序列 (\x1b[)
+    .replace(/\[[0-9;]*[a-zA-Z]/g, '')      // 移除不完整的ANSI转义序列 ([7m, [0m等)
+    .replace(/\uFFFD/g, '')                 // 移除Unicode替换字符 �
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''); // 移除控制字符
+  
+  // 第二步：修复已知的ANSI转义码污染模式
+  // 这些是OpenClaw 2026.3.2在Windows上可能产生的问题
+  cleaned = cleaned.replace(/agent:main:\[7m/g, 'agent:main:');
+  cleaned = cleaned.replace(/\[0m��"/g, '会话"');
+  cleaned = cleaned.replace(/\[0m��/g, '会话');
+  cleaned = cleaned.replace(/�»�/g, '新会');
+  
+  // 第三步：修复特定的乱码模式
+  // 修复"未命名会�?"模式（API响应中出现的）
+  cleaned = cleaned.replace(/未命名会�\?/g, '未命名会话');
+  cleaned = cleaned.replace(/未命名会[^\w\u4e00-\u9fa5]{0,3}/g, '未命名会话');
+  
+  // 修复"新会�?"模式（第二个会话的originalKey字段）
+  cleaned = cleaned.replace(/新会�\?/g, '新会话');
+  cleaned = cleaned.replace(/新会[^\w\u4e00-\u9fa5]{0,3}/g, '新会话');
+  
+  // 修复"测试会�?"模式
+  cleaned = cleaned.replace(/测试会�\?/g, '测试会话');
+  cleaned = cleaned.replace(/测试会[^\w\u4e00-\u9fa5]{0,3}/g, '测试会话');
+  
+  // 更通用的清理：任何"未命名会"后面跟着非中文字符/字母数字的，都替换为"未命名会话"
+  cleaned = cleaned.replace(/未命名会[^"\w\u4e00-\u9fa5]{0,5}/g, '未命名会话');
+  
+  // 更通用的清理：任何"新会"后面跟着非中文字符/字母数字的，都替换为"新会话"
+  cleaned = cleaned.replace(/新会[^"\w\u4e00-\u9fa5]{0,5}/g, '新会话');
+  
+  // 更通用的清理：任何"测试会"后面跟着非中文字符/字母数字的，都替换为"测试会话"
+  cleaned = cleaned.replace(/测试会[^"\w\u4e00-\u9fa5]{0,5}/g, '测试会话');
+  
+  // 最后确保：如果还有"新会"但不以"话"结尾，修复它
+  if (cleaned.includes('新会') && !cleaned.includes('新会话')) {
+    cleaned = cleaned.replace(/新会[^"\r\n]{0,3}/g, '新会话');
+  }
+  
+  // 最后确保：如果还有"未命名会"但不以"话"结尾，修复它
+  if (cleaned.includes('未命名会') && !cleaned.includes('未命名会话')) {
+    cleaned = cleaned.replace(/未命名会[^"\r\n]{0,3}/g, '未命名会话');
+  }
+  
+  // 修复希腊字母和越南语字符乱码模式（OpenClaw 2026.3.2编码问题）
+  // 模式1: δ�����Ự → 未命名会话
+  cleaned = cleaned.replace(/δ[^\w\u4e00-\u9fa5]{0,5}Ự/g, '未命名会话');
+  cleaned = cleaned.replace(/δ/g, '未命名');
+  cleaned = cleaned.replace(/Ự/g, '会话');
+  
+  // 修复替换字符(�)乱码
+  cleaned = cleaned.replace(/[�]{2,}/g, ''); // 移除连续多个�字符
+  cleaned = cleaned.replace(/�+/g, ''); // 移除所有�
+  
+  // 修复���ԻỰ模式 → 测试会话
+  // 注意：以下两行会破坏JSON结构，暂时注释掉
+  // cleaned = cleaned.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]{3,}Ự/g, '测试会话');
+  // cleaned = cleaned.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]{3,}/g, '测试');
+  
+  // 第四步：只做最基本的字符过滤，保留所有有效字符
+  // 允许所有Unicode字符（包括中文），只移除真正的控制字符
+  // 注意：这里我们不做过度的字符过滤，避免移除有效字符
+  return cleaned;
+}
+
+/**
+ * 清理JSON字符串中的非法字符，使其可解析
+ */
+function cleanJSON(jsonString) {
+  try {
+    // 先尝试直接解析
+    return JSON.parse(jsonString);
+  } catch (error) {
+    console.log('JSON解析失败，尝试清理...');
+    
+    // 逐步清理JSON字符串
+    let cleaned = jsonString;
+    
+    // 1. 移除BOM字符
+    cleaned = cleaned.replace(/^\uFEFF/, '');
+    
+    // 2. 修复字段值中的未转义控制字符
+    cleaned = cleaned.replace(/(?<=":[^"]*)[\x00-\x1F](?=[^"]*")/g, '');
+    
+    // 3. 修复字段值中的非法UTF-8序列
+    cleaned = cleaned.replace(/(?<=":[^"]*)[^\x00-\x7F\u4e00-\u9fa5](?=[^"]*")/g, '');
+    
+    // 4. 修复常见的乱码模式
+    cleaned = cleaned.replace(/新会�\?/g, '新会话');
+    cleaned = cleaned.replace(/测试会�\?/g, '测试会话');
+    
+    // 5. 确保字符串正确闭合
+    const openBraces = (cleaned.match(/\{/g) || []).length;
+    const closeBraces = (cleaned.match(/\}/g) || []).length;
+    
+    if (openBraces > closeBraces) {
+      cleaned += '}'.repeat(openBraces - closeBraces);
+    }
+    
+    try {
+      return JSON.parse(cleaned);
+    } catch (secondError) {
+      console.error('二次JSON解析失败:', secondError.message);
+      
+      // 最后手段：逐行解析
+      const lines = cleaned.split('\n').filter(line => line.trim().length > 0);
+      const jsonLines = [];
+      
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          jsonLines.push(obj);
+        } catch (lineError) {
+          // 跳过无法解析的行
+        }
+      }
+      
+      if (jsonLines.length > 0) {
+        console.log(`成功解析 ${jsonLines.length} 行JSON数据`);
+        return jsonLines[0]; // 返回第一个有效JSON对象
+      }
+      
+      throw new Error(`无法修复JSON: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * 直接读取OpenClaw会话文件，避免CLI命令的编码问题
+ * @param {string} agentId - 可选，代理ID过滤，如'main'
+ */
+async function readSessionsFromFile(agentId = null) {
+  // 确定要读取的代理ID，默认为'main'
+  const targetAgentId = agentId || 'main';
+  const sessionsPath = path.join(process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw', 'agents', targetAgentId, 'sessions', 'sessions.json');
+  console.log(`直接读取会话文件 (代理: ${targetAgentId}): ${sessionsPath}`);
+  
+  try {
+    // 直接读取文件内容
+    const fileContent = await fs.promises.readFile(sessionsPath, { encoding: 'utf-8' });
+    
+    // 清理文件内容中的非法字符
+    const cleanedContent = cleanString(fileContent);
+    
+    try {
+      // 解析JSON
+      const sessionsData = cleanJSON(cleanedContent);
+      
+      // 转换格式，适配前端API
+      const transformedSessions = [];
+      let sessionCount = 0;
+      
+      // sessions.json文件结构：{"agent:main:main": {...}, "agent:main:新会话": {...}, ...}
+      // 需要转换为数组格式
+      for (const [key, sessionData] of Object.entries(sessionsData)) {
+        try {
+          // 提取代理ID从key中
+          const agentKeyParts = cleanString(key).split(':');
+          const sessionAgentId = agentKeyParts.length >= 2 ? agentKeyParts[1] : (sessionData.agentId || 'main');
+          
+          // 如果指定了agentId过滤，且会话不属于该代理，则跳过
+          if (agentId && sessionAgentId !== agentId) {
+            continue;
+          }
+          
+          sessionCount++;
+          
+          // 深度清理键名
+          let cleanedKey = cleanString(key);
+          
+          // 特殊处理：修复已知的乱码模式
+          // 1. 修复ANSI转义码和乱码混合的键名
+          if (cleanedKey.includes('�') || cleanedKey.includes('[')) {
+            // 尝试提取可能的有效部分
+            // 匹配 "agent:main:" 后面的部分
+            const keyMatch = cleanedKey.match(/agent:main:(.+)/);
+            if (keyMatch && keyMatch[1]) {
+              const sessionName = keyMatch[1];
+              // 尝试推断正确的会话名称
+              if (sessionName.includes('�') || sessionName.includes('»')) {
+                // 这可能是"新会话"或"测试会话"的乱码
+                if (sessionName.includes('新') || sessionName.includes('�»�')) {
+                  cleanedKey = cleanedKey.replace(/agent:main:[^\w\u4e00-\u9fa5]*/, 'agent:main:新会话');
+                } else if (sessionName.includes('测试') || sessionName.includes('测试会')) {
+                  cleanedKey = cleanedKey.replace(/agent:main:[^\w\u4e00-\u9fa5]*/, 'agent:main:测试会话');
+                }
+              }
+            }
+          }
+          
+          // 从清理后的key中提取有意义的标签
+          let label = '未命名会话';
+          const keyParts = cleanedKey.split(':');
+          if (keyParts.length >= 3) {
+            const lastPart = keyParts[keyParts.length - 1];
+            if (lastPart && lastPart !== 'main' && !lastPart.startsWith('oc_')) {
+              label = cleanString(lastPart);
+            }
+          }
+          
+          // 如果sessionData中有customLabel，使用它
+          if (sessionData.customLabel) {
+            label = cleanString(sessionData.customLabel);
+          }
+          
+          // 主动修复常见的乱码模式
+          if (label.includes('δ����') || label.includes('δ�����') || label.includes('δ')) {
+            label = '未命名会话';
+          }
+          if (label.includes('���ԻỰ') || label.includes('测试会')) {
+            // 尝试保留"测试"部分，修复乱码
+            label = label.replace(/���ԻỰ/g, '测试会话');
+            label = label.replace(/[^\w\u4e00-\u9fa5]/g, '');
+            if (label === '') label = '测试会话';
+          }
+          if (label.includes('�»Ự')) {
+            label = label.replace(/�»Ự/g, '新会话');
+            label = label.replace(/[^\w\u4e00-\u9fa5]/g, '');
+            if (label === '') label = '新会话';
+          }
+          
+          // 检测乱码：如果包含Unicode替换字符(�)或希腊字母等非常见字符
+          if (label.includes('�') || label.includes('δ') || label.includes('Ự')) {
+            // 基于原始key推断可能的正确标签
+            if (cleanedKey.includes('main')) {
+              label = '主会话';
+            } else if (cleanedKey.includes('feishu')) {
+              label = '飞书会话';
+            } else if (cleanedKey.includes('test') || cleanedKey.includes('测试')) {
+              label = '测试会话';
+            } else if (cleanedKey.includes('new') || cleanedKey.includes('新')) {
+              label = '新会话';
+            } else {
+              label = '未命名会话';
+            }
+          }
+          
+          // 最终清理：移除所有非字母数字和中文字符
+          label = label.replace(/[^\w\u4e00-\u9fa5]/g, '');
+          if (label === '') label = '未命名会话';
+          
+          // 构建安全的会话对象
+          const safeSession = {
+            sessionKey: sessionData.sessionId || cleanedKey,
+            sessionId: sessionData.sessionId || '',
+            originalKey: cleanedKey,
+            label: label,
+            agentId: sessionData.agentId || 'main',
+            lastMessageAt: new Date(sessionData.updatedAt || Date.now()).toISOString(),
+            messageCount: sessionData.inputTokens ? Math.floor(sessionData.inputTokens / 10) : 0,
+            model: sessionData.model || 'unknown',
+            ageMs: sessionData.ageMs || 0
+          };
+          
+          transformedSessions.push(safeSession);
+        } catch (sessionError) {
+          console.warn(`处理会话 ${key} 时出错: ${sessionError.message}`);
+        }
+      }
+      
+      return {
+        success: true,
+        sessions: transformedSessions,
+        count: sessionCount,
+        total: sessionCount
+      };
+    } catch (parseError) {
+      console.error('解析会话文件JSON失败:', parseError);
+      throw new Error(`解析会话文件失败: ${parseError.message}`);
+    }
+  } catch (fileError) {
+    console.error('读取会话文件失败:', fileError);
+    throw new Error(`无法读取会话文件: ${fileError.message}`);
+  }
+}
+
 // CORS中间件
 app.use((req, res, next) => {
   // 允许所有来源访问（生产环境应限制）
@@ -37,12 +322,16 @@ app.use(express.urlencoded({ extended: true }));
  */
 async function runCommand(cmd, timeout = 30000) {
   return new Promise((resolve, reject) => {
-    console.log(`执行命令: ${cmd}`);
+    // 修复Windows编码问题：设置控制台代码页为UTF-8 (65001)
+    // 这是根本解决中文乱码问题的关键
+    const fixedCmd = `chcp 65001 >nul && ${cmd}`;
+    console.log(`执行命令: ${fixedCmd}`);
     
-    exec(cmd, { 
+    exec(fixedCmd, { 
       maxBuffer: 10 * 1024 * 1024,
       timeout: timeout,
-      encoding: 'utf8'
+      encoding: 'utf8',
+      shell: 'cmd.exe'  // 使用cmd.exe确保chcp命令正常工作
     }, (error, stdout, stderr) => {
       // 检查是否是警告信息（OpenClaw的Config warnings）
       const isWarning = stderr && (
@@ -85,9 +374,30 @@ async function runCommand(cmd, timeout = 30000) {
 }
 
 /**
+ * 根路径 - 提供API服务信息
+ */
+app.get('/', (req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.json({
+    success: true,
+    service: 'OpenClaw CLI代理服务',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      sessions: '/api/sessions',
+      sendMessage: '/api/sessions/:sessionKey/messages',
+      sessionHistory: '/api/sessions/:sessionKey/history'
+    },
+    message: '请访问 /health 检查服务状态，或访问前端界面 http://localhost:3003/fixed-dashboard.html'
+  });
+});
+
+/**
  * 健康检查
  */
 app.get('/health', (req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -101,32 +411,97 @@ app.get('/health', (req, res) => {
  */
 app.get('/api/sessions', async (req, res) => {
   try {
-    const output = await runCommand('openclaw sessions --json');
+    // 获取查询参数
+    const agentId = req.query.agent || req.query.agentId || null;
+    console.log(`使用直接文件读取方式获取会话数据${agentId ? ` (代理: ${agentId})` : ''}...`);
+    
+    // 方法1：尝试直接文件读取
+    try {
+      const fileResult = await readSessionsFromFile(agentId);
+      
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.json({
+        success: true,
+        data: {
+          sessions: fileResult.sessions,
+          count: fileResult.count,
+          total: fileResult.total
+        },
+        count: fileResult.count,
+        source: 'file'  // 标识数据来源
+      });
+      return;
+    } catch (fileError) {
+      console.warn('直接文件读取失败，回退到CLI命令:', fileError.message);
+    }
+    
+    // 方法2：回退到CLI命令（兼容性）
+    const output = await runCommand('openclaw sessions --json --no-color');
     
     try {
-      const result = JSON.parse(output);
+      // 第一步：彻底清理输出字符串
+      const cleanedOutput = cleanString(output);
+      console.log(`清理后输出长度: ${cleanedOutput.length}, 原始长度: ${output.length}`);
       
-      // 转换会话数据字段名，适配前端代码
+      // 第二步：尝试解析清理后的JSON
+      const result = cleanJSON(cleanedOutput);
+      
+      // 第三步：转换会话数据字段名，适配前端代码
       const sessions = result.sessions || [];
-      const transformedSessions = sessions.map(session => {
+      
+      // 如果指定了代理ID，过滤会话
+      let filteredSessions = sessions;
+      if (agentId) {
+        filteredSessions = sessions.filter(session => {
+          const sessionAgentId = session.agentId || 'main';
+          return sessionAgentId === agentId;
+        });
+        console.log(`代理过滤: 从${sessions.length}个会话中过滤出${filteredSessions.length}个属于代理"${agentId}"的会话`);
+      }
+      
+      const transformedSessions = filteredSessions.map(session => {
+        // 清理所有字段，确保没有乱码字符
+        const cleanKey = cleanString(session.key || '');
+        const cleanSessionId = cleanString(session.sessionId || '');
+        const cleanAgentId = cleanString(session.agentId || 'main');
+        const cleanModel = cleanString(session.model || 'unknown');
+        
+        // 提取标签，确保清理乱码
+        let label = cleanString(session.label || session.agentId || '未命名会话');
+        if (!session.label && cleanKey) {
+          const keyParts = cleanKey.split(':');
+          if (keyParts.length >= 3) {
+            const lastPart = keyParts[keyParts.length - 1];
+            if (lastPart && lastPart !== 'main' && !lastPart.startsWith('oc_')) {
+              label = cleanString(lastPart);
+            }
+          }
+        }
+        
         // 关键修复：使用 sessionId 作为发送消息的标识符
         // key字段是"agent:main:main"格式，不能用于--session-id参数
         // sessionId字段是UUID格式，才是正确的参数
         return {
-          sessionKey: session.sessionId || session.key, // 优先使用sessionId
-          sessionId: session.sessionId, // 保留原始sessionId
-          originalKey: session.key, // 保留原始key
-          label: session.label || session.agentId || '未命名会话',
-          agentId: session.agentId || 'main',
+          sessionKey: cleanSessionId || cleanKey, // 优先使用sessionId
+          sessionId: cleanSessionId, // 保留原始sessionId
+          originalKey: cleanKey, // 清理后的key
+          label: label,
+          agentId: cleanAgentId,
           lastMessageAt: new Date(session.updatedAt || Date.now()).toISOString(),
           messageCount: session.inputTokens ? Math.floor(session.inputTokens / 10) : 0, // 估算消息数
-          model: session.model || 'unknown',
+          model: cleanModel,
           ageMs: session.ageMs || 0,
-          // 保留原始数据
-          ...session
+          // 保留原始数据（清理后的）
+          ...session,
+          key: cleanKey,
+          sessionId: cleanSessionId,
+          agentId: cleanAgentId,
+          model: cleanModel
         };
       });
       
+      // 设置响应头确保UTF-8编码
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.json({
         success: true,
         data: {
@@ -211,7 +586,7 @@ app.post('/api/sessions/:sessionKey/messages', async (req, res) => {
     
     // 添加--local参数强制使用本地代理，绕过Gateway配对
     // 添加--json参数获取结构化输出
-    const cmd = `openclaw agent --session-id ${sessionId} --message "${escapedMessage}" --local --json`;
+    const cmd = `openclaw agent --session-id ${sessionId} --message "${escapedMessage}" --local --json --no-color`;
     
     console.log(`发送消息命令: ${cmd}`);
     
@@ -233,14 +608,131 @@ app.post('/api/sessions/:sessionKey/messages', async (req, res) => {
 });
 
 /**
+ * 删除会话 - 直接操作文件系统
+ */
+app.delete('/api/sessions/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const agentId = req.query.agentId || 'main';
+    
+    console.log(`删除会话 ${sessionId} (代理: ${agentId})`);
+    
+    const baseDir = process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw';
+    const sessionsJsonPath = path.join(baseDir, 'agents', agentId, 'sessions', 'sessions.json');
+    const sessionFilePath = path.join(baseDir, 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+    
+    console.log(`会话文件路径: ${sessionFilePath}`);
+    console.log(`会话索引文件: ${sessionsJsonPath}`);
+    
+    let results = {
+      sessionFileDeleted: false,
+      sessionFileExists: false,
+      sessionRemovedFromIndex: false,
+      sessionFoundInIndex: false
+    };
+    
+    // 1. 删除会话文件
+    if (fs.existsSync(sessionFilePath)) {
+      results.sessionFileExists = true;
+      try {
+        fs.unlinkSync(sessionFilePath);
+        results.sessionFileDeleted = true;
+        console.log(`✅ 已删除会话文件: ${sessionFilePath}`);
+      } catch (fileError) {
+        console.error(`删除会话文件失败: ${fileError.message}`);
+        // 继续执行，尝试从索引中移除
+      }
+    } else {
+      console.log(`⚠️ 会话文件不存在: ${sessionFilePath}`);
+    }
+    
+    // 2. 从sessions.json中移除会话条目
+    if (fs.existsSync(sessionsJsonPath)) {
+      try {
+        const sessionsJsonContent = fs.readFileSync(sessionsJsonPath, 'utf8');
+        const cleanedContent = cleanString(sessionsJsonContent);
+        const sessionsData = cleanJSON(cleanedContent);
+        
+        // 查找并删除对应的会话条目
+        let sessionKeyToRemove = null;
+        for (const [key, sessionData] of Object.entries(sessionsData)) {
+          if (sessionData.sessionId === sessionId) {
+            sessionKeyToRemove = key;
+            results.sessionFoundInIndex = true;
+            break;
+          }
+        }
+        
+        if (sessionKeyToRemove) {
+          delete sessionsData[sessionKeyToRemove];
+          // 写回文件
+          fs.writeFileSync(sessionsJsonPath, JSON.stringify(sessionsData, null, 2), 'utf8');
+          results.sessionRemovedFromIndex = true;
+          console.log(`✅ 已从索引中移除会话: ${sessionKeyToRemove}`);
+        } else {
+          console.log(`⚠️ 会话 ${sessionId} 未在索引中找到`);
+        }
+      } catch (jsonError) {
+        console.error(`更新sessions.json失败: ${jsonError.message}`);
+        // 继续执行，至少文件可能已被删除
+      }
+    } else {
+      console.log(`⚠️ 会话索引文件不存在: ${sessionsJsonPath}`);
+    }
+    
+    // 判断删除是否成功
+    const success = results.sessionFileDeleted || results.sessionRemovedFromIndex;
+    
+    if (success) {
+      res.json({
+        success: true,
+        message: '会话删除成功',
+        sessionId: sessionId,
+        agentId: agentId,
+        results: results
+      });
+    } else {
+      // 如果文件不存在且索引中也没有找到，也算成功（可能已被删除）
+      if (!results.sessionFileExists && !results.sessionFoundInIndex) {
+        res.json({
+          success: true,
+          message: '会话不存在或已被删除',
+          sessionId: sessionId,
+          agentId: agentId,
+          results: results,
+          note: '会话文件或索引条目均未找到，可能已被删除'
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '无法删除会话',
+          sessionId: sessionId,
+          agentId: agentId,
+          results: results,
+          details: '文件系统和索引操作均未成功'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('删除会话失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: '删除会话时发生意外错误'
+    });
+  }
+});
+
+/**
  * 获取会话历史（兼容旧版路径）
  */
 app.get('/api/sessions/:sessionKey/history', async (req, res) => {
   try {
     const { sessionKey } = req.params;
     const limit = req.query.limit || 50;
+    const agentId = req.query.agent || req.query.agentId || 'main';
     
-    const result = await getSessionMessages(sessionKey, limit);
+    const result = await getSessionMessages(sessionKey, limit, agentId);
     res.json(result);
   } catch (error) {
     console.error('获取历史失败:', error);
@@ -258,8 +750,11 @@ app.get('/api/session/:sessionId/messages', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const limit = req.query.limit || 200; // 默认更多消息
+    const agentId = req.query.agent || req.query.agentId || 'main';
     
-    const result = await getSessionMessages(sessionId, limit);
+    console.log(`获取会话消息: ${sessionId}, 代理: ${agentId}, 限制: ${limit}`);
+    
+    const result = await getSessionMessages(sessionId, limit, agentId);
     res.json(result);
   } catch (error) {
     console.error('获取消息失败:', error);
@@ -272,35 +767,59 @@ app.get('/api/session/:sessionId/messages', async (req, res) => {
 
 /**
  * 获取会话消息的通用函数
+ * @param {string} sessionId - 会话ID (UUID格式)
+ * @param {number} limit - 限制返回消息数量
+ * @param {string} agentId - 代理ID，默认为'main'
  */
-async function getSessionMessages(sessionId, limit = 50) {
-  // 尝试多种可能的文件路径
-  const possiblePaths = [
-    // 路径1: ~/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl
+async function getSessionMessages(sessionId, limit = 50, agentId = 'main') {
+  // 根据代理ID构建可能的消息文件路径
+  const possiblePaths = [];
+  
+  // 路径1: ~/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl
+  possiblePaths.push(
     path.join(
       process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
       'agents',
-      'main', // 默认agentId为main，可以从sessionId解析agent信息
+      agentId,
       'sessions',
       `${sessionId}.jsonl`
-    ),
-    // 路径2: ~/.openclaw/sessions/<sessionId>/messages.jsonl
-    path.join(
-      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
-      'sessions',
-      sessionId,
-      'messages.jsonl'
-    ),
-    // 路径3: ~/.openclaw/agents/main/sessions/<sessionId>/messages.jsonl
+    )
+  );
+  
+  // 路径2: ~/.openclaw/agents/<agentId>/sessions/<sessionId>/messages.jsonl
+  possiblePaths.push(
     path.join(
       process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
       'agents',
-      'main',
+      agentId,
       'sessions',
       sessionId,
       'messages.jsonl'
     )
-  ];
+  );
+  
+  // 路径3: ~/.openclaw/sessions/<sessionId>/messages.jsonl (旧版路径)
+  possiblePaths.push(
+    path.join(
+      process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
+      'sessions',
+      sessionId,
+      'messages.jsonl'
+    )
+  );
+  
+  // 路径4: ~/.openclaw/agents/main/sessions/<sessionId>.jsonl (回退到main代理)
+  if (agentId !== 'main') {
+    possiblePaths.push(
+      path.join(
+        process.env.OPENCLAW_STATE_DIR || 'C:/Users/admin/.openclaw',
+        'agents',
+        'main',
+        'sessions',
+        `${sessionId}.jsonl`
+      )
+    );
+  }
   
   let fileContent = '';
   let foundPath = '';
