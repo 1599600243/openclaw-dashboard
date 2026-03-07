@@ -630,14 +630,7 @@
                 const agentSelect = document.getElementById('agentSelect');
                 const currentAgentId = agentSelect ? agentSelect.value : 'main';
                 
-                let apiUrl;
-                if (currentAgentId) {
-                    // 使用特定代理的会话API
-                    apiUrl = `${API_BASE}/api/agents/${currentAgentId}/sessions`;
-                } else {
-                    // 回退到旧版API（获取所有会话）
-                    apiUrl = `${API_BASE}/api/sessions`;
-                }
+                let apiUrl = `${API_BASE}/api/sessions`;
                 
                 const response = await fetch(apiUrl);
                 const data = await response.json();
@@ -1486,10 +1479,19 @@
                     agentSelect.innerHTML = '<option value="">加载失败</option>';
                 }
             } catch (error) {
-                console.error('加载代理列表失败:', error);
+                console.warn('代理API不可用，使用默认代理');
                 const agentSelect = document.getElementById('agentSelect');
-                agentSelect.innerHTML = '<option value="">连接失败</option>';
-                document.getElementById('agentInfo').textContent = '连接失败';
+                const agentInfo = document.getElementById('agentInfo');
+                
+                if (agentSelect && agentInfo) {
+                    agentSelect.innerHTML = '';
+                    const option = document.createElement('option');
+                    option.value = 'main';
+                    option.textContent = '主要代理';
+                    option.selected = true;
+                    agentSelect.appendChild(option);
+                    agentInfo.textContent = '当前代理: 主要代理';
+                }
             }
         }
         
